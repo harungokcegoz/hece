@@ -30,6 +30,11 @@ describe('skills', () => {
     }
   })
 
+  it('flow states that hece pacing wins over superpowers handoffs', () => {
+    expect(read('flow')).toContain("hece's pacing wins")
+    expect(read('flow')).toContain('dispatch exactly one slice at a time')
+  })
+
   it('never offers an approve tool', () => {
     for (const name of EXPECTED) expect(read(name)).not.toMatch(/flow_approve/)
   })

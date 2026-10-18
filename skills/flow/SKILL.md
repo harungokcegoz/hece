@@ -12,6 +12,7 @@ You are the orchestrator. The goal is a feature the user **understands**: they c
 1. Call `prefs_get` and `flow_get`. Follow the preferences exactly. If `errors` is not empty, tell the user in one line per error.
 2. hece builds on superpowers. If superpowers skills are unavailable, say so in one line, with the install command `/plugin install superpowers@claude-plugins-official`, and stop.
 3. Every message you write follows hece:communicate.
+4. hece's pacing wins. Where a superpowers skill's own next-step prompts, execution handoffs or continuous task loops conflict with this skill, follow this skill: do not offer superpowers' execution-choice prompt, dispatch exactly one slice at a time, and stop after every slice.
 
 ## Phases
 
