@@ -13,10 +13,10 @@ Respect `slice_stop.depth`: `line` = 1 line, `short` ≤ 5 lines, `detailed` ≤
 4. One *why* for the key decision.
 5. If your review or a worker fixed something, say so in one line.
 6. A check question, if hece:check-question says one applies. Wait for the answer before step 7.
-7. Offer the choices with the native picker (AskUserQuestion): `Continue`, `Ask about this`, `Side chat`, `Redo`. The first option's label must be exactly `Continue`, because that's how hece records the approval.
+7. Offer the choices with the native picker (AskUserQuestion): `Continue`, `Ask about this`, `Side chat`, `Redo`. The first option's label must be exactly `Continue`, because that's how hece records the approval. The picker's answer is recorded by hece. Continue only after you receive `hece: the user approved slice N`. If the user picked Continue but no such line arrives, ask them to type `continue`.
 
 Then stop. Make no edits until hece reports approval.
 
 - **Ask about this:** answer in at most 5 lines, then offer the same choices again.
-- **Side chat:** tell the user to open a side chat (hece's Sessions panel, or `claude --resume <session id> --fork-session` in another terminal; the id is in `flow_get` under `sessions`). The main chat stays focused.
-- **Redo:** ask what to change in one question, then redo the slice.
+- **Side chat:** tell the user to open a side chat with `claude --resume <session id> --fork-session` in another terminal (the id is in `flow_get` under `sessions`). The main chat stays focused.
+- **Redo:** needs the user. When they pick `Redo` or type `redo`, hece replies `hece: the user asked to redo slice N`. Then ask what to change in one question, call `flow_start_slice(N)` again, and stop again at the end.

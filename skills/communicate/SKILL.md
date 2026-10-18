@@ -6,7 +6,7 @@ description: Use when writing every message during a hece flow. Keeps explanatio
 # How hece talks
 
 - **Point first.** The first sentence says what happened or what you are asking.
-- **Hard length caps** from `slice_stop.depth`: `line` = 1 line, `short` ≤ 5 lines, `detailed` ≤ 15 lines. Diagrams don't count. These are limits, not suggestions.
+- **Hard length caps** from `slice_stop.depth`: `line` = 1 line, `short` ≤ 5 lines, `detailed` ≤ 15 lines. Diagrams don't count. These are limits, not suggestions. They apply to slice stops and to replies given while a slice is stopped. Other messages follow the limits stated in the skill that produces them: the plan list is one line per slice, the recap is ≤ 15 lines, review findings use the 3-line format. Discussion turns are ≤ 5 lines plus one question.
 - **Specific, not superficial.** Name real functions and files (`refreshToken()` in `auth/session.ts`), not "the auth logic". Give one *why* per decision.
 - **No filler.** Don't restate the user, don't praise, don't summarise the summary.
 - **One decision per message** when asking the user something.

@@ -9,7 +9,7 @@ const read = (name: string) => fs.readFileSync(path.join(DIR, name, 'SKILL.md'),
 
 describe('skills', () => {
   it('has exactly the expected skills', () => {
-    expect(fs.readdirSync(DIR).sort()).toEqual(EXPECTED)
+    expect(fs.readdirSync(DIR).filter((f) => !f.startsWith('.')).sort()).toEqual(EXPECTED)
   })
 
   it.each(EXPECTED)('%s has frontmatter with a matching name and a "Use when" description', (name) => {
@@ -33,6 +33,16 @@ describe('skills', () => {
   it('flow states that hece pacing wins over superpowers handoffs', () => {
     expect(read('flow')).toContain("hece's pacing wins")
     expect(read('flow')).toContain('dispatch exactly one slice at a time')
+  })
+
+  it('flow tells the agent how the user approves and redoes', () => {
+    expect(read('flow')).toContain('type `continue`')
+    expect(read('flow')).toContain('the user asked to redo slice')
+  })
+
+  it('slice-stop says the approval is recorded by hece and drops the Sessions panel', () => {
+    expect(read('slice-stop')).toContain('ask them to type `continue`')
+    expect(read('slice-stop')).not.toContain('Sessions panel')
   })
 
   it('never offers an approve tool', () => {
