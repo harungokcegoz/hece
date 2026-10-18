@@ -3,3 +3,5 @@ dist/
 .hece/state/
 # throwaway frame spike (2026-10-17), not part of the project
 spike/
+.superpowers/
+.DS_Store

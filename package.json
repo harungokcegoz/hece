@@ -2,10 +2,36 @@
   "name": "hece",
   "version": "0.1.0",
   "description": "Stay in the loop while AI agents build: discussion, small slices, a stop after each.",
+  "keywords": [
+    "claude-code",
+    "ai-agents",
+    "developer-tools",
+    "mcp",
+    "learning",
+    "pair-programming",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "Harun Gökçegöz",
+  "homepage": "https://github.com/harungokcegoz/hece#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/harungokcegoz/hece.git"
+  },
+  "bugs": {
+    "url": "https://github.com/harungokcegoz/hece/issues"
+  },
   "type": "module",
   "bin": {
     "hece": "dist/cli.js"
   },
+  "files": [
+    "dist",
+    "skills",
+    "hooks",
+    ".claude-plugin",
+    ".mcp.json"
+  ],
   "engines": {
     "node": ">=20"
   },
