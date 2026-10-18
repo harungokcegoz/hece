@@ -1,0 +1,12 @@
+{
+  "session_id": "8fb76984-e56c-4149-91e8-dba7ec77663c",
+  "transcript_path": "~/.claude/projects/-private-tmp-hece-cap/8fb76984-e56c-4149-91e8-dba7ec77663c.jsonl",
+  "cwd": "/private/tmp/hece-cap",
+  "scratchpad_dir": "/private/tmp/claude-501/-private-tmp-hece-cap/8fb76984-e56c-4149-91e8-dba7ec77663c/scratchpad",
+  "hook_event_name": "SessionStart",
+  "source": "resume",
+  "seconds_since_last_response": 10,
+  "context_tokens": 54781,
+  "prompt_cache_likely_expired": false,
+  "estimated_cache_write_usd": 0.2191
+}

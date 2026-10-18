@@ -1,0 +1,28 @@
+{
+  "session_id": "8fb76984-e56c-4149-91e8-dba7ec77663c",
+  "transcript_path": "~/.claude/projects/-private-tmp-hece-cap/8fb76984-e56c-4149-91e8-dba7ec77663c.jsonl",
+  "cwd": "/private/tmp/hece-cap",
+  "scratchpad_dir": "/private/tmp/claude-501/-private-tmp-hece-cap/8fb76984-e56c-4149-91e8-dba7ec77663c/scratchpad",
+  "prompt_id": "113d20a7-9711-4e53-bddc-77e66c899489",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "mcp__plugin_hece_hece__flow_start_slice",
+  "tool_input": {
+    "n": 1
+  },
+  "tool_response": [
+    {
+      "type": "text",
+      "text": "hece · build\n✓ Discussion (0 decisions)\n✓ Plan (1 slice)\n▸ Build\n  ▸ 1. greet.js prints \"Hello, <name>!\" from argv, default World\n  Review\n  Recap\nguards: on"
+    }
+  ],
+  "tool_use_id": "toolu_01J883nBCHbysJbyLhyXo1Hd",
+  "duration_ms": 6,
+  "mcp_server": {
+    "name": "plugin:hece:hece",
+    "source": "plugin"
+  }
+}
