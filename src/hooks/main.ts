@@ -4,7 +4,7 @@ import path from 'node:path'
 import { HookPayload, handleHook } from './handle.js'
 import { resolveRoot, statePaths } from '../state/paths.js'
 import { appendEvent, writeJsonAtomic } from '../state/store.js'
-import { loadPrefs } from '../prefs/load.js'
+import { loadPrefs, prefsFiles } from '../prefs/load.js'
 
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = []
@@ -35,7 +35,8 @@ export async function runHook(): Promise<void> {
     // capture is an explicit developer opt-in, so it is deliberately not gated on a hece flow existing
     if (process.env.HECE_CAPTURE === '1') capture(root, text, payload)
     const { prefs, errors } = loadPrefs(process.env, root)
-    const res = handleHook(payload, { root, prefs, prefsErrors: errors, now: Date.now() })
+    const configDir = path.dirname(prefsFiles(process.env, root).global)
+    const res = handleHook(payload, { root, configDir, prefs, prefsErrors: errors, now: Date.now() })
     if (res.stdout) process.stdout.write(res.stdout)
   } catch (err) {
     const message = (err as Error)?.message ?? String(err)

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
+import path from 'node:path'
 import { tmpProject, seedFlow, runCli } from '../helpers.js'
 import { statePaths } from '../../src/state/paths.js'
 import { readEvents } from '../../src/state/store.js'
@@ -49,6 +50,15 @@ describe('hece hook (process)', () => {
     const bash = runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }) })
     expect(bash.status).toBe(0)
     expect(bash.stdout).toBe('')
+  })
+
+  it('denies an edit inside the global config dir resolved from XDG_CONFIG_HOME', () => {
+    const root = tmpProject()
+    seedFlow(root, emptyFlow())
+    const file = path.join(root, '.config-test', 'hece', 'preferences.yaml')
+    const r = runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: file } }) })
+    expect(r.status).toBe(0)
+    expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny')
   })
 
   it('prints usage and exits 1 for an unknown command', () => {

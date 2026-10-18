@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import fs from 'node:fs'
+import path from 'node:path'
 import { tmpProject, seedFlow } from '../helpers.js'
 import { handleHook, summarizeTool } from '../../src/hooks/handle.js'
 import { statePaths } from '../../src/state/paths.js'
@@ -10,7 +11,7 @@ import { presetDefaults } from '../../src/prefs/schema.js'
 
 let root: string
 const prefs = presetDefaults('involved')
-const ctx = () => ({ root, prefs, prefsErrors: [] as string[], now: 100 })
+const ctx = () => ({ root, configDir: path.join(root, '.config-test', 'hece'), prefs, prefsErrors: [] as string[], now: 100 })
 const plan = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
 const stopped = finishSlice(startSlice(approve(plan, 2).state, 1, { guards: true }, 3), 1, { summary: 's', connectsTo: 'c' }, 4)
 const events = () => readEvents(statePaths(root).events).map((e) => e.event)
@@ -45,6 +46,22 @@ describe('handleHook', () => {
       },
     })
     expect(events()).toEqual(['blocked'])
+  })
+
+  it('denies an edit of hece preferences or state even when no slice is waiting, and logs it', () => {
+    seedFlow(root, emptyFlow())
+    for (const file of [path.join(root, '.hece', 'preferences.yaml'), path.join(root, '.config-test', 'hece', 'preferences.yaml')]) {
+      const r = handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: file } }, ctx())
+      expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason)
+        .toBe('hece: preferences and flow state are changed by the user, not the agent')
+    }
+    expect(events()).toEqual(['blocked', 'blocked'])
+  })
+
+  it('allows an ordinary file edit while a slice is working', () => {
+    seedFlow(root, startSlice(approve(plan, 2).state, 1, { guards: true }, 3))
+    const r = handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: path.join(root, 'src', 'a.ts') } }, ctx())
+    expect(r.stdout).toBe('')
   })
 
   it('logs allowed tools as activity and marks the agent busy', () => {

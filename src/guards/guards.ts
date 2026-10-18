@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import path from 'node:path'
 import { FlowState } from '../flow/types.js'
 import { Prefs } from '../prefs/schema.js'
 
@@ -7,8 +9,49 @@ export type GuardDecision = { allow: true } | { allow: false; reason: string }
 
 const deny = (reason: string): GuardDecision => ({ allow: false, reason })
 
-export function decideTool(flow: FlowState, prefs: Prefs, toolName: string): GuardDecision {
-  if (!prefs.guards || !EDIT_TOOLS.has(toolName)) return { allow: true }
+export interface ProtectedDirs {
+  root: string
+  configDir: string
+}
+
+// Resolves symlinks in the longest existing prefix, so a link or `..` cannot dodge the check.
+function realish(p: string): string {
+  const rest: string[] = []
+  let cur = p
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(cur), ...rest)
+    } catch {
+      const parent = path.dirname(cur)
+      if (parent === cur) return p
+      rest.unshift(path.basename(cur))
+      cur = parent
+    }
+  }
+}
+
+const isInside = (dir: string, file: string): boolean => {
+  const rel = path.relative(dir, file)
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
+}
+
+function touchesHeceFiles(input: Record<string, unknown> | undefined, protect: ProtectedDirs): boolean {
+  const raw = input?.file_path ?? input?.notebook_path
+  if (typeof raw !== 'string' || raw === '') return false
+  const target = realish(path.resolve(protect.root, raw))
+  return [path.join(protect.root, '.hece'), protect.configDir].some((d) => isInside(realish(path.resolve(d)), target))
+}
+
+export function decideTool(
+  flow: FlowState,
+  prefs: Prefs,
+  tool: { name: string; input?: Record<string, unknown> },
+  protect: ProtectedDirs,
+): GuardDecision {
+  if (!prefs.guards || !EDIT_TOOLS.has(tool.name)) return { allow: true }
+  if (touchesHeceFiles(tool.input, protect)) {
+    return deny('hece: preferences and flow state are changed by the user, not the agent')
+  }
   if (flow.phase === 'idle') return { allow: true }
   if (flow.phase === 'discuss') return deny('hece: no code edits during discussion; agree on a plan first')
   // done is not a free pass: a stopped slice or an unapproved new plan still blocks edits

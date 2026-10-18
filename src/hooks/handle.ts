@@ -19,6 +19,7 @@ export interface HookPayload {
 
 export interface HookContext {
   root: string
+  configDir: string
   prefs: Prefs
   prefsErrors: string[]
   now: number
@@ -112,7 +113,7 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
       setIdle(false)
       const name = p.tool_name ?? ''
       const target = summarizeTool(name, p.tool_input)
-      const d = decideTool(flow, ctx.prefs, name)
+      const d = decideTool(flow, ctx.prefs, { name, input: p.tool_input }, { root: ctx.root, configDir: ctx.configDir })
       if (!d.allow) {
         ev('blocked', { tool: name, target, reason: d.reason })
         return deny(d.reason)
