@@ -6,6 +6,10 @@
 
 > **Status: early (v0.1, core engine).** It works inside Claude Code today. The three-pane terminal app (panels framing your agent) is next. See the [roadmap](#roadmap).
 
+![The hece frame prototype: an Activity panel on the left, Claude Code in the middle, and a Flow panel on the right with Build as the current step](docs/images/frame-prototype.png)
+
+<sub>**Prototype from the feasibility spike, not shipped yet.** Activity and Sessions are on the left, the real Claude Code runs unchanged in the middle, and the Flow panel on the right shows the current step. Claude moved the flow to *Build* by calling hece's MCP server. This becomes the real `hece` frame in [plan 2](#roadmap).</sub>
+
 ---
 
 ## Why
