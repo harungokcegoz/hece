@@ -52,11 +52,26 @@ describe('isContinueIntent', () => {
 })
 
 describe('pickerApproved', () => {
-  it('approves when an answer is exactly Continue', () => {
-    expect(pickerApproved({ answers: { 'Slice 1 done. Next?': 'Continue' } })).toBe(true)
+  const question = {
+    question: 'Slice 1 done. What next?',
+    header: 'Next',
+    options: [{ label: 'Continue', description: '' }, { label: 'Redo', description: '' }],
+    multiSelect: false,
+  }
+  const result = (answer: string | string[]) => ({ questions: [question], answers: { [question.question]: answer } })
+
+  it('approves when the chosen answer is Continue', () => {
+    expect(pickerApproved(result('Continue'))).toBe(true)
+  })
+  it('does not approve Redo even though the echoed options contain Continue', () => {
+    expect(pickerApproved(result('Redo'))).toBe(false)
+  })
+  it('reads multiSelect answers given as an array', () => {
+    expect(pickerApproved(result(['Continue']))).toBe(true)
+    expect(pickerApproved(result(['Redo']))).toBe(false)
   })
   it('approves the text form Claude shows the model', () => {
-    expect(pickerApproved('User has answered your questions: "Slice 1 done. Next?"="Continue".')).toBe(true)
+    expect(pickerApproved('Your questions have been answered: "Slice 1 done. What next?"="Continue".')).toBe(true)
   })
   it('does not approve other answers or question text that merely mentions continue', () => {
     expect(pickerApproved({ answers: { 'Continue or redo?': 'Redo' } })).toBe(false)

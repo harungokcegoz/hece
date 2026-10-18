@@ -28,15 +28,14 @@ export function isContinueIntent(text: string): boolean {
   return CONTINUE_WORDS.has(text.trim().toLowerCase().replace(/[.!\s]+$/u, ''))
 }
 
-// The picker's tool_response shape is not documented; accept a structured answer that is
-// exactly "Continue", or the `"question"="Continue"` text form. Pinned by captured fixtures (Task 11).
+// AskUserQuestion's result is { questions: [...], answers: { "<question>": string | string[] } }.
+// `questions` echoes every option label (including "Continue"), so only `answers` may be read.
+// A plain string result uses the `"question"="Continue"` text form.
 export function pickerApproved(toolResponse: unknown): boolean {
-  const strings: string[] = []
-  const walk = (v: unknown) => {
-    if (typeof v === 'string') strings.push(v)
-    else if (Array.isArray(v)) v.forEach(walk)
-    else if (v !== null && typeof v === 'object') Object.values(v).forEach(walk)
-  }
-  walk(toolResponse)
-  return strings.some((s) => s.trim().toLowerCase() === 'continue' || /="continue"/i.test(s))
+  if (typeof toolResponse === 'string') return /="continue"/i.test(toolResponse)
+  if (toolResponse === null || typeof toolResponse !== 'object') return false
+  const answers = (toolResponse as { answers?: unknown }).answers
+  if (answers === null || typeof answers !== 'object') return false
+  return Object.values(answers).some((a) =>
+    (Array.isArray(a) ? a : [a]).some((v) => typeof v === 'string' && v.trim().toLowerCase() === 'continue'))
 }
