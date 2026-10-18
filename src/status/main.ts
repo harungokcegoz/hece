@@ -8,11 +8,11 @@ import { loadPrefs } from '../prefs/load.js'
 export function runStatus(): void {
   const root = resolveRoot(process.env)
   const paths = statePaths(root)
+  const { prefs, errors } = loadPrefs(process.env, root)
   if (!fs.existsSync(paths.flow)) {
     process.stdout.write('hece: no flow in this project yet. Ask the agent to build something with hece to start one.\n')
-    return
+  } else {
+    process.stdout.write(renderFlow(readJson<FlowState>(paths.flow, emptyFlow()), { guards: prefs.guards }) + '\n')
   }
-  const { prefs, errors } = loadPrefs(process.env, root)
-  process.stdout.write(renderFlow(readJson<FlowState>(paths.flow, emptyFlow()), { guards: prefs.guards }) + '\n')
   for (const e of errors) process.stderr.write(`warning: ${e}\n`)
 }

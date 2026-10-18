@@ -21,4 +21,14 @@ describe('hece status', () => {
     expect(r.stdout).toContain('guards: on')
     expect(r.stderr).toContain('unknown key "gaurds"')
   })
+
+  it('warns about preference errors even when there is no flow yet', () => {
+    const root = tmpProject()
+    fs.mkdirSync(path.join(root, '.hece'), { recursive: true })
+    fs.writeFileSync(path.join(root, '.hece', 'preferences.yaml'), 'gaurds: off\n')
+    const r = runCli(['status'], { root })
+    expect(r.status).toBe(0)
+    expect(r.stdout).toContain('no flow in this project yet')
+    expect(r.stderr).toContain('unknown key "gaurds"')
+  })
 })
