@@ -1,0 +1,107 @@
+import fs from 'node:fs'
+import { statePaths } from '../state/paths.js'
+import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
+import { FlowState, emptyFlow } from '../flow/types.js'
+import { approve } from '../flow/flow.js'
+import { Prefs } from '../prefs/schema.js'
+import { decideTool, isContinueIntent, pickerApproved } from '../guards/guards.js'
+
+export interface HookPayload {
+  hook_event_name?: string
+  session_id?: string
+  cwd?: string
+  source?: string
+  prompt?: string
+  tool_name?: string
+  tool_input?: Record<string, unknown>
+  tool_response?: unknown
+}
+
+export interface HookContext {
+  root: string
+  prefs: Prefs
+  prefsErrors: string[]
+  now: number
+}
+
+export interface SessionRecord {
+  sessionId: string
+  source: string
+  at: number
+}
+
+const PICKER_TOOL = 'AskUserQuestion'
+
+const oneLine = (raw: string): string => {
+  const s = raw.replace(/\s+/g, ' ').trim()
+  return s.length > 120 ? s.slice(0, 117) + '...' : s
+}
+
+export function summarizeTool(name: string, input?: Record<string, unknown>): string {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '')
+  if (name === 'Bash') return oneLine(str(input?.command))
+  return oneLine(str(input?.file_path) || str(input?.notebook_path) || str(input?.pattern) || str(input?.path))
+}
+
+export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string } {
+  const paths = statePaths(ctx.root)
+  // hooks fire in every project once the plugin is installed; stay silent where no hece flow exists
+  if (!fs.existsSync(paths.flow)) return { stdout: '' }
+
+  const none = { stdout: '' }
+  const ev = (event: string, extra: Record<string, unknown> = {}) =>
+    appendEvent(paths.events, { at: ctx.now, event, session: p.session_id, ...extra })
+  const setIdle = (idle: boolean) => writeJsonAtomic(paths.agent, { idle, at: ctx.now })
+  const flow = readJson<FlowState>(paths.flow, emptyFlow())
+
+  const recordApproval = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
+    const { state, approved } = approve(flow, ctx.now)
+    if (!approved) return none
+    writeJsonAtomic(paths.flow, state)
+    const text = approved.what === 'plan' ? 'hece: the user approved the plan' : `hece: the user approved slice ${approved.n}`
+    ev('approved', { what: approved.what, n: approved.what === 'slice' ? approved.n : undefined, via })
+    return { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: text } }) }
+  }
+
+  switch (p.hook_event_name) {
+    case 'SessionStart': {
+      if (p.session_id) {
+        const sessions = readJson<SessionRecord[]>(paths.sessions, [])
+        sessions.push({ sessionId: p.session_id, source: p.source ?? 'unknown', at: ctx.now })
+        writeJsonAtomic(paths.sessions, sessions)
+      }
+      ev('session_start', { source: p.source })
+      for (const message of ctx.prefsErrors) ev('prefs_error', { message })
+      return none
+    }
+    case 'UserPromptSubmit': {
+      setIdle(false)
+      ev('prompt', { text: oneLine(p.prompt ?? '') })
+      return p.prompt && isContinueIntent(p.prompt) ? recordApproval('UserPromptSubmit', 'typed') : none
+    }
+    case 'PreToolUse': {
+      setIdle(false)
+      const name = p.tool_name ?? ''
+      const target = summarizeTool(name, p.tool_input)
+      const d = decideTool(flow, ctx.prefs, name)
+      if (!d.allow) {
+        ev('blocked', { tool: name, target, reason: d.reason })
+        return {
+          stdout: JSON.stringify({
+            hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: d.reason },
+          }),
+        }
+      }
+      ev('tool', { tool: name, target, slice: flow.currentSlice })
+      return none
+    }
+    case 'PostToolUse':
+      return p.tool_name === PICKER_TOOL && pickerApproved(p.tool_response) ? recordApproval('PostToolUse', 'picker') : none
+    case 'Stop':
+      setIdle(true)
+      ev('turn_done')
+      return none
+    default:
+      return none
+  }
+}
