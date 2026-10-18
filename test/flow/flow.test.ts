@@ -134,6 +134,19 @@ describe('flow', () => {
     expect(setPlan(done, slices, { guards: true }, 5).phase).toBe('plan')
   })
 
+  it('a plan started after done begins a fresh flow, with nothing carried over', () => {
+    let s = startSlice(approvedPlan(), 1, { guards: true }, 4)
+    s = finishSlice(s, 1, { summary: 'x', connectsTo: 'y' }, 5)
+    s = approve(s, 6).state
+    s = reportReview(addDecision(s, { title: 'Auth', choice: 'JWT', why: 'x' }, 11), { important: 1, minor: 0 }, 12)
+    expect(s.plan!.slices[0].status).toBe('approved')
+    s = setPhase(s, 'done', { guards: true }, 13)
+    const fresh = setPlan(s, [slices[0]], { guards: true }, 14)
+    expect(fresh.plan!.slices[0]).toMatchObject({ n: 1, title: 'Token model', status: 'todo' })
+    expect(fresh.plan).toMatchObject({ approved: false, changed: false })
+    expect(fresh).toMatchObject({ phase: 'plan', decisions: [], currentSlice: null, review: null, updatedAt: 14 })
+  })
+
   it('starting a discussion after done (or idle) begins a fresh flow', () => {
     const done = setPhase(addDecision(approvedPlan(), { title: 'Auth', choice: 'JWT', why: 'x' }, 4), 'done', { guards: true }, 5)
     expect(done.decisions).toHaveLength(1)

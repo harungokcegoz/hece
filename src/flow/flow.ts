@@ -44,8 +44,10 @@ export function setPlan(s: FlowState, input: SliceInput[], opts: { guards: boole
     const waiting = s.plan?.slices.find((x) => x.status === 'stopped')
     if (waiting) throw new FlowError(`${sliceWaiting(waiting.n)}; propose the plan change after they respond`)
   }
-  const next = clone(s)
-  const prev = s.plan
+  // a plan started after done is a new feature: nothing carries over from the finished flow
+  const base = s.phase === 'done' ? emptyFlow() : s
+  const next = clone(base)
+  const prev = base.plan
   const slices: Slice[] = input.map((x, i) => {
     const n = i + 1
     const old = prev?.slices.find((p) => p.n === n && p.title === x.title)
