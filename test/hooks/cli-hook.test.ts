@@ -22,6 +22,23 @@ describe('hece hook (process)', () => {
     expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
   })
 
+  it.each(['null', '[]', '"text"'])('exits 0 and logs hook_error for non-object JSON %s', (stdin) => {
+    const root = tmpProject()
+    seedFlow(root, emptyFlow())
+    const r = runCli(['hook'], { root, stdin })
+    expect(r.status).toBe(0)
+    expect(r.stdout).toBe('')
+    expect(readEvents(statePaths(root).events).map((e) => e.event)).toEqual(['hook_error'])
+  })
+
+  it('exits 0 when cwd is not a string', () => {
+    const root = tmpProject()
+    seedFlow(root, emptyFlow())
+    const r = runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'Stop', cwd: 5 }) })
+    expect(r.status).toBe(0)
+    expect(readEvents(statePaths(root).events).map((e) => e.event)).toEqual(['turn_done'])
+  })
+
   it('prints usage and exits 1 for an unknown command', () => {
     const r = runCli(['nope'], { root: tmpProject() })
     expect(r.status).toBe(1)

@@ -20,30 +20,34 @@ function capture(root: string, text: string, p: HookPayload): void {
 }
 
 export async function runHook(): Promise<void> {
-  const text = await readStdin()
-  let payload: HookPayload = {}
+  let root: string | undefined
   try {
-    payload = JSON.parse(text) as HookPayload
-  } catch {
-    // handled below as hook_error
-  }
-  const root = resolveRoot(process.env, payload.cwd)
-  try {
+    const text = await readStdin()
+    let payload: HookPayload = {}
+    try {
+      const parsed: unknown = JSON.parse(text)
+      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) payload = parsed as HookPayload
+    } catch {
+      // handled below as hook_error
+    }
+    root = resolveRoot(process.env, typeof payload.cwd === 'string' ? payload.cwd : undefined)
     if (typeof payload.hook_event_name !== 'string') throw new Error('hook received no valid JSON payload')
+    // capture is an explicit developer opt-in, so it is deliberately not gated on a hece flow existing
     if (process.env.HECE_CAPTURE === '1') capture(root, text, payload)
     const { prefs, errors } = loadPrefs(process.env, root)
     const res = handleHook(payload, { root, prefs, prefsErrors: errors, now: Date.now() })
     if (res.stdout) process.stdout.write(res.stdout)
   } catch (err) {
-    const paths = statePaths(root)
-    if (fs.existsSync(paths.flow)) {
-      try {
-        appendEvent(paths.events, { at: Date.now(), event: 'hook_error', message: (err as Error).message })
-      } catch {
-        // nothing more we can do without breaking the agent
+    const message = (err as Error)?.message ?? String(err)
+    try {
+      if (root) {
+        const paths = statePaths(root)
+        if (fs.existsSync(paths.flow)) appendEvent(paths.events, { at: Date.now(), event: 'hook_error', message })
       }
+    } catch {
+      // nothing more we can do without breaking the agent
     }
-    process.stderr.write(`hece hook: ${(err as Error).message}\n`)
+    process.stderr.write(`hece hook: ${message}\n`)
   }
   process.exitCode = 0
 }
