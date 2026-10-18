@@ -94,6 +94,29 @@ describe('decideTool: hece-owned files', () => {
     const d = decideTool(working, on, { name: 'Write', input: { file_path: 'link/preferences.yaml' } }, { root: dir, configDir: path.join(dir, 'cfg') })
     expect(d).toEqual({ allow: false, reason })
   })
+  const caseInsensitiveFs = process.platform === 'darwin' || process.platform === 'win32'
+  it.runIf(caseInsensitiveFs)('denies case variants of .hece on a case-insensitive filesystem', () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hece-case-')))
+    fs.mkdirSync(path.join(dir, '.hece', 'state'), { recursive: true })
+    const p2 = { root: dir, configDir: path.join(dir, 'cfg', 'hece') }
+    for (const file of [path.join(dir, '.HECE', 'state', 'flow.json'), path.join(dir, '.Hece', 'preferences.yaml')]) {
+      expect(decideTool(working, on, { name: 'Write', input: { file_path: file } }, p2)).toEqual({ allow: false, reason })
+    }
+  })
+  it.runIf(caseInsensitiveFs)('denies a case-changed configDir', () => {
+    const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'hece-case-')))
+    fs.mkdirSync(path.join(dir, 'cfg', 'hece'), { recursive: true })
+    const p2 = { root: dir, configDir: path.join(dir, 'cfg', 'hece') }
+    const file = path.join(dir, 'CFG', 'Hece', 'preferences.yaml')
+    expect(decideTool(working, on, { name: 'Write', input: { file_path: file } }, p2)).toEqual({ allow: false, reason })
+  })
+  it('expands ~ to the home directory before checking the configDir', () => {
+    const p2 = { root: '/proj', configDir: path.join(os.homedir(), '.config', 'hece') }
+    for (const file of ['~/.config/hece/preferences.yaml', '~/.config/hece']) {
+      expect(decideTool(working, on, { name: 'Write', input: { file_path: file } }, p2)).toEqual({ allow: false, reason })
+    }
+    expect(decideTool(working, on, { name: 'Write', input: { file_path: '~/other/a.ts' } }, p2)).toEqual({ allow: true })
+  })
   it('allows everything when guards are off', () => {
     expect(write('/proj/.hece/preferences.yaml', 'Write', off)).toEqual({ allow: true })
   })

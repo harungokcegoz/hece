@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { FlowState } from '../flow/types.js'
 import { Prefs } from '../prefs/schema.js'
@@ -15,12 +16,13 @@ export interface ProtectedDirs {
 }
 
 // Resolves symlinks in the longest existing prefix, so a link or `..` cannot dodge the check.
+// The native realpath also returns the on-disk letter case of that prefix.
 function realish(p: string): string {
   const rest: string[] = []
   let cur = p
   for (;;) {
     try {
-      return path.join(fs.realpathSync(cur), ...rest)
+      return path.join(fs.realpathSync.native(cur), ...rest)
     } catch {
       const parent = path.dirname(cur)
       if (parent === cur) return p
@@ -30,15 +32,19 @@ function realish(p: string): string {
   }
 }
 
+// macOS and Windows filesystems are case-insensitive, so `.HECE` is the same directory as `.hece`
+const CASE_INSENSITIVE = process.platform === 'darwin' || process.platform === 'win32'
+
 const isInside = (dir: string, file: string): boolean => {
-  const rel = path.relative(dir, file)
+  const rel = CASE_INSENSITIVE ? path.relative(dir.toLowerCase(), file.toLowerCase()) : path.relative(dir, file)
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
 }
 
 function touchesHeceFiles(input: Record<string, unknown> | undefined, protect: ProtectedDirs): boolean {
   const raw = input?.file_path ?? input?.notebook_path
   if (typeof raw !== 'string' || raw === '') return false
-  const target = realish(path.resolve(protect.root, raw))
+  const expanded = raw === '~' || raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(1)) : raw
+  const target = realish(path.resolve(protect.root, expanded))
   return [path.join(protect.root, '.hece'), protect.configDir].some((d) => isInside(realish(path.resolve(d)), target))
 }
 

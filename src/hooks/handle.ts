@@ -61,7 +61,11 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
 
   let flow: FlowState
   try {
-    flow = readJson<FlowState>(paths.flow, emptyFlow())
+    const raw: unknown = readJson<unknown>(paths.flow, emptyFlow())
+    if (raw === null || typeof raw !== 'object' || typeof (raw as { phase?: unknown }).phase !== 'string') {
+      throw new Error(`hece: ${paths.flow} is not a hece flow`)
+    }
+    flow = raw as FlowState
   } catch (err) {
     // an unreadable flow must not silently switch the guards off
     ev('hook_error', { message: (err as Error).message })

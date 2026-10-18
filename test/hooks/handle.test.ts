@@ -129,6 +129,16 @@ describe('handleHook', () => {
     expect(events()).toContain('hook_error')
   })
 
+  it.each(['null', '[]', '"text"', '{"phase": 5}', '{}'])('a flow.json containing %s is treated as unreadable', (content) => {
+    fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
+    fs.writeFileSync(statePaths(root).flow, content)
+    const r = handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/p/a.ts' } }, ctx())
+    expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason)
+      .toBe('hece: .hece/state/flow.json is unreadable; run hece status')
+    expect(events()).toContain('hook_error')
+    expect(handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }, ctx()).stdout).toBe('')
+  })
+
   it('an unreadable flow.json never blocks Bash, and does not block edits with guards off', () => {
     fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
     fs.writeFileSync(statePaths(root).flow, '{oops')
