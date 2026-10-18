@@ -11,7 +11,7 @@ import { presetDefaults } from '../../src/prefs/schema.js'
 let root: string
 const prefs = presetDefaults('involved')
 const ctx = () => ({ root, prefs, prefsErrors: [] as string[], now: 100 })
-const plan = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], 1)
+const plan = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
 const stopped = finishSlice(startSlice(approve(plan, 2).state, 1, { guards: true }, 3), 1, { summary: 's', connectsTo: 'c' }, 4)
 const events = () => readEvents(statePaths(root).events).map((e) => e.event)
 const flow = () => readJson<FlowState>(statePaths(root).flow, emptyFlow())
@@ -77,8 +77,51 @@ describe('handleHook', () => {
     expect(flow().plan!.approved).toBe(true)
   })
 
+  it('records a typed "redo" without approving, and tells the agent', () => {
+    seedFlow(root, stopped)
+    const r = handleHook({ hook_event_name: 'UserPromptSubmit', prompt: 'Redo.' }, ctx())
+    expect(JSON.parse(r.stdout)).toEqual({
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'hece: the user asked to redo slice 1' },
+    })
+    expect(flow().plan!.slices[0]).toMatchObject({ status: 'stopped', redoRequested: true })
+    expect(readEvents(statePaths(root).events).find((e) => e.event === 'redo_requested')).toMatchObject({ n: 1, via: 'typed' })
+  })
+
+  it('records a picked Redo with via=picker', () => {
+    seedFlow(root, stopped)
+    const r = handleHook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_response: { answers: { 'Next?': 'Redo' } } }, ctx())
+    expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user asked to redo slice 1')
+    expect(readEvents(statePaths(root).events).find((e) => e.event === 'redo_requested')).toMatchObject({ n: 1, via: 'picker' })
+  })
+
+  it('ignores redo when no slice is stopped', () => {
+    seedFlow(root, plan)
+    expect(handleHook({ hook_event_name: 'UserPromptSubmit', prompt: 'redo' }, ctx()).stdout).toBe('')
+    expect(events()).not.toContain('redo_requested')
+  })
+
+  it('an unreadable flow.json denies edits when guards are on, and logs hook_error', () => {
+    fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
+    fs.writeFileSync(statePaths(root).flow, '{oops')
+    const r = handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/p/a.ts' } }, ctx())
+    expect(JSON.parse(r.stdout).hookSpecificOutput).toEqual({
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: 'hece: .hece/state/flow.json is unreadable; run hece status',
+    })
+    expect(events()).toContain('hook_error')
+  })
+
+  it('an unreadable flow.json never blocks Bash, and does not block edits with guards off', () => {
+    fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
+    fs.writeFileSync(statePaths(root).flow, '{oops')
+    expect(handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }, ctx()).stdout).toBe('')
+    const off = { ...ctx(), prefs: { ...prefs, guards: false } }
+    expect(handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write' }, off).stdout).toBe('')
+  })
+
   it('marks the agent idle on Stop', () => {
-    seedFlow(root, setPhase(emptyFlow(), 'discuss', 1))
+    seedFlow(root, setPhase(emptyFlow(), 'discuss', { guards: true }, 1))
     handleHook({ hook_event_name: 'Stop' }, ctx())
     expect(readJson(statePaths(root).agent, {})).toEqual({ idle: true, at: 100 })
     expect(events()).toEqual(['turn_done'])

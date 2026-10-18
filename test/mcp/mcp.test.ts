@@ -66,6 +66,11 @@ describe('hece mcp', () => {
     expect((await call(c, 'flow_finish_slice', { n: 1, summary: 'Token type', connects_to: 'login uses it' })).text)
       .toContain('■ 1. Token model  ← waiting for you')
     expect(await call(c, 'flow_start_slice', { n: 2 })).toEqual({ text: 'hece: slice 1 is waiting for the user', isError: true })
+    // the agent cannot end the stop by calling other tools either
+    expect(await call(c, 'flow_start_slice', { n: 1 })).toEqual({ text: 'hece: slice 1 is waiting for the user', isError: true })
+    expect(await call(c, 'flow_set_phase', { phase: 'done' })).toEqual({ text: 'hece: slice 1 is waiting for the user', isError: true })
+    expect((await call(c, 'flow_set_plan', { slices: [{ title: 'Other', files: [], kind: 'routine' }] })).text)
+      .toBe('hece: slice 1 is waiting for the user; propose the plan change after they respond')
 
     expect(approveAsHuman(root).stdout).toContain('approved slice 1')
     expect((await call(c, 'flow_start_slice', { n: 2 })).text).toContain('▸ 2. Login')

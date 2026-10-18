@@ -2,9 +2,9 @@ import fs from 'node:fs'
 import { statePaths } from '../state/paths.js'
 import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
-import { approve } from '../flow/flow.js'
+import { approve, requestRedo } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
-import { decideTool, isContinueIntent, pickerApproved } from '../guards/guards.js'
+import { EDIT_TOOLS, decideTool, isContinueIntent, isRedoIntent, pickerApproved, pickerRedo } from '../guards/guards.js'
 
 export interface HookPayload {
   hook_event_name?: string
@@ -52,7 +52,35 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
   const ev = (event: string, extra: Record<string, unknown> = {}) =>
     appendEvent(paths.events, { at: ctx.now, event, session: p.session_id, ...extra })
   const setIdle = (idle: boolean) => writeJsonAtomic(paths.agent, { idle, at: ctx.now })
-  const flow = readJson<FlowState>(paths.flow, emptyFlow())
+  const deny = (reason: string) => ({
+    stdout: JSON.stringify({
+      hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason },
+    }),
+  })
+
+  let flow: FlowState
+  try {
+    flow = readJson<FlowState>(paths.flow, emptyFlow())
+  } catch (err) {
+    // an unreadable flow must not silently switch the guards off
+    ev('hook_error', { message: (err as Error).message })
+    if (p.hook_event_name === 'PreToolUse' && EDIT_TOOLS.has(p.tool_name ?? '') && ctx.prefs.guards) {
+      return deny('hece: .hece/state/flow.json is unreadable; run hece status')
+    }
+    return none
+  }
+
+  const recordRedo = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
+    const { state, requested } = requestRedo(flow, ctx.now)
+    if (requested === null) return none
+    writeJsonAtomic(paths.flow, state)
+    ev('redo_requested', { n: requested, via })
+    return {
+      stdout: JSON.stringify({
+        hookSpecificOutput: { hookEventName, additionalContext: `hece: the user asked to redo slice ${requested}` },
+      }),
+    }
+  }
 
   const recordApproval = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
     const { state, approved } = approve(flow, ctx.now)
@@ -77,6 +105,7 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     case 'UserPromptSubmit': {
       setIdle(false)
       ev('prompt', { text: oneLine(p.prompt ?? '') })
+      if (p.prompt && isRedoIntent(p.prompt)) return recordRedo('UserPromptSubmit', 'typed')
       return p.prompt && isContinueIntent(p.prompt) ? recordApproval('UserPromptSubmit', 'typed') : none
     }
     case 'PreToolUse': {
@@ -86,17 +115,17 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
       const d = decideTool(flow, ctx.prefs, name)
       if (!d.allow) {
         ev('blocked', { tool: name, target, reason: d.reason })
-        return {
-          stdout: JSON.stringify({
-            hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: d.reason },
-          }),
-        }
+        return deny(d.reason)
       }
       ev('tool', { tool: name, target, slice: flow.currentSlice })
       return none
     }
-    case 'PostToolUse':
-      return p.tool_name === PICKER_TOOL && pickerApproved(p.tool_response) ? recordApproval('PostToolUse', 'picker') : none
+    case 'PostToolUse': {
+      if (p.tool_name !== PICKER_TOOL) return none
+      // redo wins if both were somehow selected: it is the answer that does not advance the flow
+      if (pickerRedo(p.tool_response)) return recordRedo('PostToolUse', 'picker')
+      return pickerApproved(p.tool_response) ? recordApproval('PostToolUse', 'picker') : none
+    }
     case 'Stop':
       setIdle(true)
       ev('turn_done')

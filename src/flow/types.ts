@@ -19,6 +19,8 @@ export interface Slice {
   status: SliceStatus
   summary?: string
   connectsTo?: string
+  // set only by the human-facing hook (typed "redo" or picked Redo); lets a stopped slice restart
+  redoRequested?: boolean
 }
 
 export interface Plan {

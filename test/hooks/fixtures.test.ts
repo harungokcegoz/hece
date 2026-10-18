@@ -10,7 +10,7 @@ import { setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.j
 const DIR = path.resolve('test/fixtures/claude-code')
 const files = fs.readdirSync(DIR).filter((f) => f.endsWith('.json'))
 const raw = (f: string) => fs.readFileSync(path.join(DIR, f), 'utf8')
-const plan = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], 1)
+const plan = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
 const stopped = finishSlice(startSlice(approve(plan, 2).state, 1, { guards: true }, 3), 1, { summary: 's', connectsTo: 'c' }, 4)
 const edit = files.find((f) => f === 'PreToolUse-Write.json' || f === 'PreToolUse-Edit.json')
 
@@ -50,13 +50,13 @@ describe('real Claude Code payloads', () => {
     expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user approved slice 1')
   })
 
-  it('the picker answer "Redo" does not approve the waiting slice', () => {
+  it('the picker answer "Redo" does not approve the waiting slice but records the redo request', () => {
     const root = tmpProject()
     seedFlow(root, stopped)
     const r = runCli(['hook'], { root, stdin: raw('PostToolUse-AskUserQuestion-redo.json') })
-    expect(r.stdout).toBe('')
+    expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user asked to redo slice 1')
     const flow = readJson<FlowState>(statePaths(root).flow, emptyFlow())
-    expect(flow.plan!.slices[0]!.status).toBe('stopped')
+    expect(flow.plan!.slices[0]).toMatchObject({ status: 'stopped', redoRequested: true })
   })
 
   it('the real typed "continue" approves the waiting slice', () => {

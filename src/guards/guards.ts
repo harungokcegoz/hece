@@ -9,9 +9,10 @@ const deny = (reason: string): GuardDecision => ({ allow: false, reason })
 
 export function decideTool(flow: FlowState, prefs: Prefs, toolName: string): GuardDecision {
   if (!prefs.guards || !EDIT_TOOLS.has(toolName)) return { allow: true }
-  if (flow.phase === 'idle' || flow.phase === 'done') return { allow: true }
+  if (flow.phase === 'idle') return { allow: true }
   if (flow.phase === 'discuss') return deny('hece: no code edits during discussion; agree on a plan first')
-  if (!flow.plan) return deny('hece: no code edits before there is a plan')
+  // done is not a free pass: a stopped slice or an unapproved new plan still blocks edits
+  if (!flow.plan) return flow.phase === 'done' ? { allow: true } : deny('hece: no code edits before there is a plan')
   if (!flow.plan.approved) {
     return deny(flow.plan.changed
       ? 'hece: the changed plan is waiting for the user to approve it'
@@ -24,18 +25,33 @@ export function decideTool(flow: FlowState, prefs: Prefs, toolName: string): Gua
 
 const CONTINUE_WORDS = new Set(['continue', 'ok', 'next', 'go', 'approve'])
 
+const normalize = (text: string): string => text.trim().toLowerCase().replace(/[.!\s]+$/u, '')
+
 export function isContinueIntent(text: string): boolean {
-  return CONTINUE_WORDS.has(text.trim().toLowerCase().replace(/[.!\s]+$/u, ''))
+  return CONTINUE_WORDS.has(normalize(text))
+}
+
+export function isRedoIntent(text: string): boolean {
+  return normalize(text) === 'redo'
 }
 
 // AskUserQuestion's result is { questions: [...], answers: { "<question>": string | string[] } }.
 // `questions` echoes every option label (including "Continue"), so only `answers` may be read.
-// A plain string result uses the `"question"="Continue"` text form.
-export function pickerApproved(toolResponse: unknown): boolean {
-  if (typeof toolResponse === 'string') return /="continue"/i.test(toolResponse)
-  if (toolResponse === null || typeof toolResponse !== 'object') return false
+// Any other shape (such as a string the agent could imitate) yields no answers.
+function pickerAnswers(toolResponse: unknown): string[] {
+  if (toolResponse === null || typeof toolResponse !== 'object') return []
   const answers = (toolResponse as { answers?: unknown }).answers
-  if (answers === null || typeof answers !== 'object') return false
-  return Object.values(answers).some((a) =>
-    (Array.isArray(a) ? a : [a]).some((v) => typeof v === 'string' && v.trim().toLowerCase() === 'continue'))
+  if (answers === null || typeof answers !== 'object') return []
+  return Object.values(answers)
+    .flatMap((a) => (Array.isArray(a) ? a : [a]))
+    .filter((v): v is string => typeof v === 'string')
+    .map((v) => v.trim().toLowerCase())
+}
+
+export function pickerApproved(toolResponse: unknown): boolean {
+  return pickerAnswers(toolResponse).includes('continue')
+}
+
+export function pickerRedo(toolResponse: unknown): boolean {
+  return pickerAnswers(toolResponse).includes('redo')
 }

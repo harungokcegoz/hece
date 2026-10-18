@@ -1,11 +1,29 @@
-import { FlowState, Phase, PHASES, Slice, SliceInput } from './types.js'
+import { FlowState, Phase, PHASES, Slice, SliceInput, emptyFlow } from './types.js'
 
 export class FlowError extends Error {}
 
 const clone = (s: FlowState): FlowState => structuredClone(s)
 
-export function setPhase(s: FlowState, phase: Phase, now: number): FlowState {
+const PLAN_WAITING = 'hece: the plan is waiting for the user to approve it'
+const sliceWaiting = (n: number) => `hece: slice ${n} is waiting for the user`
+
+export function setPhase(s: FlowState, phase: Phase, opts: { guards: boolean }, now: number): FlowState {
   if (!PHASES.includes(phase)) throw new FlowError(`unknown phase "${phase}"; valid: ${PHASES.join(', ')}`)
+  if (opts.guards) {
+    const waiting = s.plan?.slices.find((x) => x.status === 'stopped')
+    if (phase === 'done') {
+      if (waiting) throw new FlowError(sliceWaiting(waiting.n))
+      if (s.plan && !s.plan.approved) throw new FlowError(PLAN_WAITING)
+    }
+    if (phase === 'build') {
+      if (!s.plan) throw new FlowError('hece: no plan yet; call flow_set_plan first')
+      if (!s.plan.approved) throw new FlowError(PLAN_WAITING)
+    }
+  }
+  // a new discussion after idle or done starts a fresh flow; sessions live in their own file
+  if (phase === 'discuss' && (s.phase === 'idle' || s.phase === 'done')) {
+    return { ...emptyFlow(), phase: 'discuss', updatedAt: now }
+  }
   const next = clone(s)
   next.phase = phase
   next.updatedAt = now
@@ -15,12 +33,17 @@ export function setPhase(s: FlowState, phase: Phase, now: number): FlowState {
 export function addDecision(s: FlowState, d: { title: string; choice: string; why: string }, now: number): FlowState {
   const next = clone(s)
   next.decisions.push({ title: d.title, choice: d.choice, why: d.why, at: now })
+  if (next.phase === 'idle') next.phase = 'discuss'
   next.updatedAt = now
   return next
 }
 
-export function setPlan(s: FlowState, input: SliceInput[], now: number): FlowState {
+export function setPlan(s: FlowState, input: SliceInput[], opts: { guards: boolean }, now: number): FlowState {
   if (input.length === 0) throw new FlowError('a plan needs at least one slice')
+  if (opts.guards) {
+    const waiting = s.plan?.slices.find((x) => x.status === 'stopped')
+    if (waiting) throw new FlowError(`${sliceWaiting(waiting.n)}; propose the plan change after they respond`)
+  }
   const next = clone(s)
   const prev = s.plan
   const slices: Slice[] = input.map((x, i) => {
@@ -31,7 +54,7 @@ export function setPlan(s: FlowState, input: SliceInput[], now: number): FlowSta
   })
   next.plan = { slices, approved: false, changed: prev !== null }
   if (next.currentSlice !== null && next.currentSlice > slices.length) next.currentSlice = null
-  if (next.phase === 'idle' || next.phase === 'discuss') next.phase = 'plan'
+  if (next.phase === 'idle' || next.phase === 'discuss' || next.phase === 'done') next.phase = 'plan'
   next.updatedAt = now
   return next
 }
@@ -47,12 +70,15 @@ export function startSlice(s: FlowState, n: number, opts: { guards: boolean }, n
   const next = clone(s)
   const sl = findSlice(next, n)
   if (opts.guards) {
-    if (!next.plan!.approved) throw new FlowError('hece: the plan is waiting for the user to approve it')
-    const waiting = next.plan!.slices.find((x) => x.status === 'stopped' && x.n !== n)
-    if (waiting) throw new FlowError(`hece: slice ${waiting.n} is waiting for the user`)
+    if (!next.plan!.approved) throw new FlowError(PLAN_WAITING)
+    const waiting = next.plan!.slices.find((x) => x.status === 'stopped' && (x.n !== n || !x.redoRequested))
+    if (waiting) throw new FlowError(sliceWaiting(waiting.n))
+    const busy = next.plan!.slices.find((x) => x.status === 'working' && x.n !== n)
+    if (busy) throw new FlowError(`hece: slice ${busy.n} is still in progress; finish it first`)
   }
   if (sl.status === 'approved') throw new FlowError(`slice ${n} is already approved`)
   sl.status = 'working'
+  delete sl.redoRequested
   next.currentSlice = n
   next.phase = 'build'
   next.updatedAt = now
@@ -83,6 +109,16 @@ export function reportReview(s: FlowState, r: { important: number; minor: number
   return next
 }
 
+// Human-only, like approve(). Called by hooks when the user asks to redo the waiting slice.
+export function requestRedo(s: FlowState, now: number): { state: FlowState; requested: number | null } {
+  const next = clone(s)
+  const sl = next.plan?.slices.find((x) => x.status === 'stopped')
+  if (!sl) return { state: s, requested: null }
+  sl.redoRequested = true
+  next.updatedAt = now
+  return { state: next, requested: sl.n }
+}
+
 export type Approved = { what: 'plan' } | { what: 'slice'; n: number } | null
 
 // Human-only. Called by hooks when the user approves; never exposed as an MCP tool.
@@ -97,6 +133,7 @@ export function approve(s: FlowState, now: number): { state: FlowState; approved
   const sl = next.plan?.slices.find((x) => x.status === 'stopped')
   if (sl) {
     sl.status = 'approved'
+    delete sl.redoRequested
     next.updatedAt = now
     return { state: next, approved: { what: 'slice', n: sl.n } }
   }

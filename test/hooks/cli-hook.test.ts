@@ -39,6 +39,18 @@ describe('hece hook (process)', () => {
     expect(readEvents(statePaths(root).events).map((e) => e.event)).toEqual(['turn_done'])
   })
 
+  it('exits 0 and denies an edit when flow.json is unreadable; Bash gets no output', () => {
+    const root = tmpProject()
+    fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
+    fs.writeFileSync(statePaths(root).flow, '{oops')
+    const write = runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: 'a.ts' } }) })
+    expect(write.status).toBe(0)
+    expect(JSON.parse(write.stdout).hookSpecificOutput.permissionDecisionReason).toBe('hece: .hece/state/flow.json is unreadable; run hece status')
+    const bash = runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }) })
+    expect(bash.status).toBe(0)
+    expect(bash.stdout).toBe('')
+  })
+
   it('prints usage and exits 1 for an unknown command', () => {
     const r = runCli(['nope'], { root: tmpProject() })
     expect(r.status).toBe(1)
