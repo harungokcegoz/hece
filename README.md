@@ -58,20 +58,22 @@ hece mcp           ── the agent reports progress: phases, decisions, slices
 
 ```bash
 git clone https://github.com/harungokcegoz/hece.git
-cd hece && npm install && npm run build
+cd hece && npm install && npm run build && npm link
 ```
 
 Then, in any project:
 
 ```bash
 cd your-project
-claude --plugin-dir /path/to/hece
+hece
 ```
 
-Ask Claude to build something with hece, for example *"Let's build a CLI that prints a greeting, using hece."* To see where you are, run:
+`hece` starts Claude Code with hece loaded. It accepts the same arguments as `claude`, for example `hece -c` to continue your last session.
+
+Ask Claude to build something with hece, for example *"Let's build a CLI that prints a greeting, using hece."* To see where you are, run this from your project root:
 
 ```bash
-node /path/to/hece/dist/cli.js status   # run from your project root
+hece status
 ```
 
 To approve the plan or a slice, type `continue` (or `ok`, `next`, `go`, `approve`), or pick **Continue** in the picker.

@@ -60,10 +60,4 @@ describe('hece hook (process)', () => {
     expect(r.status).toBe(0)
     expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny')
   })
-
-  it('prints usage and exits 1 for an unknown command', () => {
-    const r = runCli(['nope'], { root: tmpProject() })
-    expect(r.status).toBe(1)
-    expect(r.stderr).toContain('usage: hece')
-  })
 })

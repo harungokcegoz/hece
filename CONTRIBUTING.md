@@ -18,9 +18,9 @@ npm run build     # tsc → dist/
 To try your changes in Claude Code:
 
 ```bash
-npm run build
+npm run build && npm link
 cd /some/test/project
-claude --plugin-dir /path/to/hece
+hece
 ```
 
 ## Project layout
