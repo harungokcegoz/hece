@@ -26,7 +26,7 @@ export function setPlan(s: FlowState, input: SliceInput[], now: number): FlowSta
   const slices: Slice[] = input.map((x, i) => {
     const n = i + 1
     const old = prev?.slices.find((p) => p.n === n && p.title === x.title)
-    if (old && old.status === 'approved') return { ...old, files: x.files, kind: x.kind, model: x.model }
+    if (old && old.status !== 'todo') return { ...old, files: x.files, kind: x.kind, model: x.model }
     return { n, title: x.title, files: x.files, kind: x.kind, model: x.model, status: 'todo' }
   })
   next.plan = { slices, approved: false, changed: prev !== null }

@@ -102,6 +102,22 @@ describe('flow', () => {
     expect(s.phase).toBe('build')
   })
 
+  it('a changed plan keeps a stopped slice stopped, so the stop cannot be bypassed', () => {
+    let s = startSlice(approvedPlan(), 1, { guards: true }, 4)
+    s = finishSlice(s, 1, { summary: 'x', connectsTo: 'y' }, 5)
+    s = setPlan(s, slices, 6)
+    expect(s.plan!.slices[0]).toMatchObject({ status: 'stopped', summary: 'x', connectsTo: 'y' })
+    s = approve(s, 7).state
+    expect(s.plan!.approved).toBe(true)
+    expect(() => startSlice(s, 2, { guards: true }, 8)).toThrow('slice 1 is waiting for the user')
+  })
+
+  it('a changed plan keeps a working slice working', () => {
+    const s = setPlan(startSlice(approvedPlan(), 1, { guards: true }, 4), slices, 5)
+    expect(s.plan!.slices[0].status).toBe('working')
+    expect(s.currentSlice).toBe(1)
+  })
+
   it('reports review counts and enters the review phase', () => {
     expect(reportReview(emptyFlow(), { important: 2, minor: 3 }, 8)).toMatchObject({
       phase: 'review',
