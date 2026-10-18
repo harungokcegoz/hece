@@ -1,0 +1,140 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { z } from 'zod'
+import { statePaths } from '../state/paths.js'
+import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
+import { FlowState, emptyFlow } from '../flow/types.js'
+import * as flow from '../flow/flow.js'
+import { renderFlow } from '../flow/render.js'
+import { loadPrefs } from '../prefs/load.js'
+
+export const TOOL_NAMES = [
+  'flow_get',
+  'flow_set_phase',
+  'flow_add_decision',
+  'flow_set_plan',
+  'flow_start_slice',
+  'flow_finish_slice',
+  'flow_report_review',
+  'prefs_get',
+] as const
+
+type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
+const ok = (text: string): ToolResult => ({ content: [{ type: 'text', text }] })
+const fail = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
+
+export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?: () => number }): McpServer {
+  const now = opts.now ?? Date.now
+  const paths = statePaths(opts.root)
+  const server = new McpServer({ name: 'hece', version: '0.1.0' })
+  const prefs = () => loadPrefs(opts.env, opts.root)
+  const load = () => readJson<FlowState>(paths.flow, emptyFlow())
+
+  // keep runtime state out of the user's git history; .hece/preferences.yaml stays committable
+  const ensureGitignore = () => {
+    const file = path.join(paths.heceDir, '.gitignore')
+    if (!fs.existsSync(file)) {
+      fs.mkdirSync(paths.heceDir, { recursive: true })
+      fs.writeFileSync(file, 'state/\n')
+    }
+  }
+
+  const mutate = (tool: string, fn: (s: FlowState) => FlowState, extra: Record<string, unknown> = {}): ToolResult => {
+    try {
+      const next = fn(load())
+      ensureGitignore()
+      writeJsonAtomic(paths.flow, next)
+      appendEvent(paths.events, { at: now(), event: 'flow', tool, ...extra })
+      return ok(renderFlow(next, { guards: prefs().prefs.guards }))
+    } catch (err) {
+      return fail((err as Error).message)
+    }
+  }
+
+  server.registerTool(
+    'flow_get',
+    { description: 'Read the current hece flow (phase, decisions, plan, slices, review) and recorded sessions.', inputSchema: {} },
+    async () => {
+      try {
+        const s = load()
+        const sessions = readJson(paths.sessions, [])
+        return ok(`${renderFlow(s, { guards: prefs().prefs.guards })}\n\n${JSON.stringify({ flow: s, sessions }, null, 2)}`)
+      } catch (err) {
+        return fail((err as Error).message)
+      }
+    },
+  )
+
+  server.registerTool(
+    'flow_set_phase',
+    {
+      description: 'Move the hece flow to a phase. Calling it with "discuss" starts a fresh flow (earlier decisions and plan are cleared) and creates .hece/state in the project.',
+      inputSchema: { phase: z.enum(['discuss', 'plan', 'build', 'review', 'recap', 'done']) },
+    },
+    async ({ phase }) => mutate('flow_set_phase', (s) => flow.setPhase(s, phase, { guards: prefs().prefs.guards }, now()), { phase }),
+  )
+
+  server.registerTool(
+    'flow_add_decision',
+    {
+      description: 'Record a decision settled with the user during discussion.',
+      inputSchema: { title: z.string().min(1), choice: z.string().min(1), why: z.string().min(1) },
+    },
+    async (d) => mutate('flow_add_decision', (s) => flow.addDecision(s, d, now()), { title: d.title }),
+  )
+
+  server.registerTool(
+    'flow_set_plan',
+    {
+      description:
+        'Set or change the plan as ordered slices. The user must approve it before code edits; a changed plan needs approval again.',
+      inputSchema: {
+        slices: z
+          .array(
+            z.object({
+              title: z.string().min(1),
+              files: z.array(z.string()),
+              kind: z.enum(['routine', 'teaching']),
+              model: z.string().optional(),
+            }),
+          )
+          .min(1),
+      },
+    },
+    async ({ slices }) => mutate('flow_set_plan', (s) => flow.setPlan(s, slices, { guards: prefs().prefs.guards }, now()), { slices: slices.length }),
+  )
+
+  server.registerTool(
+    'flow_start_slice',
+    { description: 'Start working on slice n (1-based).', inputSchema: { n: z.number().int().min(1) } },
+    async ({ n }) => mutate('flow_start_slice', (s) => flow.startSlice(s, n, { guards: prefs().prefs.guards }, now()), { n }),
+  )
+
+  server.registerTool(
+    'flow_finish_slice',
+    {
+      description: 'Finish slice n and stop for the user. summary: what changed. connects_to: how it connects to existing code.',
+      inputSchema: { n: z.number().int().min(1), summary: z.string().min(1), connects_to: z.string().min(1) },
+    },
+    async ({ n, summary, connects_to }) =>
+      mutate('flow_finish_slice', (s) => flow.finishSlice(s, n, { summary, connectsTo: connects_to }, now()), { n }),
+  )
+
+  server.registerTool(
+    'flow_report_review',
+    {
+      description: 'Record the final review counts and enter the review phase.',
+      inputSchema: { important: z.number().int().min(0), minor: z.number().int().min(0) },
+    },
+    async (r) => mutate('flow_report_review', (s) => flow.reportReview(s, r, now()), r),
+  )
+
+  server.registerTool(
+    'prefs_get',
+    { description: "Read the user's effective hece preferences (global merged with project). Follow them exactly.", inputSchema: {} },
+    async () => ok(JSON.stringify(prefs(), null, 2)),
+  )
+
+  return server
+}

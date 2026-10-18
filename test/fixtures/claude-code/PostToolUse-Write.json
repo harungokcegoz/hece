@@ -1,0 +1,27 @@
+{
+  "session_id": "8fb76984-e56c-4149-91e8-dba7ec77663c",
+  "transcript_path": "~/.claude/projects/-private-tmp-hece-cap/8fb76984-e56c-4149-91e8-dba7ec77663c.jsonl",
+  "cwd": "/private/tmp/hece-cap",
+  "scratchpad_dir": "/private/tmp/claude-501/-private-tmp-hece-cap/8fb76984-e56c-4149-91e8-dba7ec77663c/scratchpad",
+  "prompt_id": "113d20a7-9711-4e53-bddc-77e66c899489",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PostToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/private/tmp/hece-cap/greet.js",
+    "content": "const name = process.argv[2] || \"World\";\nconsole.log(`Hello, ${name}!`);\n"
+  },
+  "tool_response": {
+    "type": "create",
+    "filePath": "/private/tmp/hece-cap/greet.js",
+    "content": "const name = process.argv[2] || \"World\";\nconsole.log(`Hello, ${name}!`);\n",
+    "structuredPatch": [],
+    "originalFile": null,
+    "userModified": false
+  },
+  "tool_use_id": "toolu_01QQBcZnbvgyVxRdtRN24Wor",
+  "duration_ms": 3
+}
