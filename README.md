@@ -78,6 +78,15 @@ hece status
 
 To approve the plan or a slice, type `continue` (or `ok`, `next`, `go`, `approve`), or pick **Continue** in the picker.
 
+## Without the CLI: the portable skill
+
+You don't use Claude Code, or don't want to install anything? [`portable/staying-in-the-loop/SKILL.md`](portable/staying-in-the-loop/SKILL.md) is the same approach as a single, brand-neutral skill file for any chat or agent app. It covers the discussion, small slices, a stop after every slice, how you approve, explanations with diagrams, review and recap.
+
+- **Apps that support skills** (Claude Code, Codex, Gemini CLI and others): copy the `portable/staying-in-the-loop/` folder into your skills directory, e.g. `~/.claude/skills/` or `~/.agents/skills/`.
+- **Any other app** (ChatGPT, Claude.ai projects, Cursor rules, …): paste the contents of `SKILL.md` into the custom instructions, project instructions or rules file.
+
+Without hece's hooks, the rules are kept by the agent itself (soft guards) and not enforced by code. For hard guards, use the CLI.
+
 ## Preferences
 
 `~/.config/hece/preferences.yaml` holds your global defaults. `.hece/preferences.yaml` in a project overrides them and can be committed to share a setup with your team.
