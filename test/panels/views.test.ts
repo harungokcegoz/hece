@@ -43,7 +43,14 @@ describe('display width', () => {
 
 describe('flowPanelLines', () => {
   it('explains what to do when there is no flow yet', () => {
-    expect(flowPanelLines(null, { guards: true, idle: null })).toEqual(['hece', '', 'No flow yet.', 'Ask Claude to build', 'something to start one.'])
+    expect(flowPanelLines(null, { guards: true, idle: null })).toEqual(['No flow yet.', 'Ask Claude to build', 'something to start one.'])
+    expect(flowPanelLines(null, { guards: true, idle: null, home: true })).toEqual([
+      'No flow yet.',
+      'Ask Claude to build',
+      'something to start one.',
+      '',
+      "Tip: you're in your home folder.",
+    ])
   })
   it('shows the flow, whether Claude is waiting, and the guards', () => {
     let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
@@ -78,7 +85,7 @@ describe('flowPanelLines', () => {
 
 describe('sessionsPanelLines', () => {
   it('lists the most recent sessions', () => {
-    expect(sessionsPanelLines([])).toEqual(['Sessions', '', 'none yet'])
-    expect(sessionsPanelLines([{ sessionId: 'abcdef1234', source: 'startup', at: 1 }])).toEqual(['Sessions', '', '• main abcdef12'])
+    expect(sessionsPanelLines([])).toEqual(['none yet'])
+    expect(sessionsPanelLines([{ sessionId: 'abcdef1234', source: 'startup', at: 1 }])).toEqual(['• main abcdef12'])
   })
 })

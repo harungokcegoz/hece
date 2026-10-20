@@ -4,8 +4,11 @@ import { SessionRecord } from '../hooks/handle.js'
 import { color } from './color.js'
 import { fitLine } from './fit.js'
 
-export function flowPanelLines(flow: FlowState | null, opts: { guards: boolean; idle: boolean | null }): string[] {
-  if (!flow) return ['hece', '', 'No flow yet.', 'Ask Claude to build', 'something to start one.']
+export function flowPanelLines(flow: FlowState | null, opts: { guards: boolean; idle: boolean | null; home?: boolean }): string[] {
+  if (!flow) {
+    const empty = ['No flow yet.', 'Ask Claude to build', 'something to start one.']
+    return opts.home ? [...empty, '', "Tip: you're in your home folder."] : empty
+  }
   const lines = renderFlow(flow, { guards: opts.guards }).split('\n')
   const status = opts.idle === null ? [] : [opts.idle ? 'Claude: waiting for you' : 'Claude: working…']
   return [...lines.slice(0, -1), '', ...status, lines[lines.length - 1]]
@@ -41,10 +44,8 @@ export function colorFlowLine(line: string): string {
 }
 
 export function sessionsPanelLines(sessions: SessionRecord[]): string[] {
-  if (sessions.length === 0) return ['Sessions', '', 'none yet']
+  if (sessions.length === 0) return ['none yet']
   return [
-    'Sessions',
-    '',
     ...sessions.slice(-8).map((s) => `• ${s.source === 'startup' ? 'main' : s.source} ${s.sessionId.slice(0, 8)}`),
   ]
 }

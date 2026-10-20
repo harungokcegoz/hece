@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { runFrame } from './frame/main.js'
+import { runFrame, runFrameFit } from './frame/main.js'
 import { runHook } from './hooks/main.js'
 import { runLaunch } from './launch/main.js'
 import { runMcp } from './mcp/main.js'
@@ -19,6 +19,7 @@ async function main(argv: string[]): Promise<void> {
   if (cmd === 'hook') return runHook()
   if (cmd === 'mcp') return runMcp()
   if (cmd === 'status') return runStatus()
+  if (cmd === 'frame-fit') return runFrameFit()
   if (cmd === 'panel') return runPanel(argv.slice(1))
   if (cmd === 'help') {
     process.stdout.write(USAGE)

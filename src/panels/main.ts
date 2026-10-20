@@ -1,5 +1,5 @@
 import fs from 'node:fs'
-import { resolveRoot, statePaths } from '../state/paths.js'
+import { resolveRoot, statePaths, homeDir, isHomeRoot } from '../state/paths.js'
 import { readJson, HeceEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
 import { loadPrefs } from '../prefs/load.js'
@@ -101,32 +101,31 @@ export function panelFrame(
   const clamp = (lines: string[]) => lines.slice(0, Math.max(0, height))
 
   if (problem && widget !== 'sessions') {
-    const head = widget === 'activity' ? [color.bold(fitLine('Activity', width)), ''] : []
-    return clamp([...head, ...fitLines(warning, width, warning.length, 'top').map((l) => color.red(l))])
+    return clamp(fitLines(warning, width, warning.length, 'top').map((l) => color.red(l)))
   }
 
   if (widget === 'flow') {
     const { prefs } = loadPrefs(env, root)
     const agent = safeJson<{ idle?: boolean }>(paths.agent)
-    const lines = flowPanelLines(flow, { guards: prefs.guards, idle: flow && agent ? Boolean(agent.idle) : null })
+    const lines = flowPanelLines(flow, {
+      guards: prefs.guards,
+      idle: flow && agent ? Boolean(agent.idle) : null,
+      home: !flow && isHomeRoot(root, homeDir(env)),
+    })
     return clamp(fitFlowLines(lines, width, height).map(colorFlowLine))
   }
 
   if (widget === 'sessions') {
     const lines = sessionsPanelLines(safeJson<SessionRecord[]>(paths.sessions) ?? [])
-    return clamp(fitLines(lines, width, height, 'top').map((l, i) => (i === 0 ? color.bold(l) : l)))
+    return clamp(fitLines(lines, width, height, 'top'))
   }
 
-  const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height - 2))
-  const head = [color.bold(fitLine('Activity', width)), '']
+  const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height))
   if (view.length === 0) {
-    return clamp([
-      ...head,
-      ...fitLines(["Nothing yet. Claude's steps", 'show up here in plain words.'], width, height - 2, 'top').map((l) => color.dim(l)),
-    ])
+    return clamp(fitLines(["Nothing yet. Claude's steps", 'show up here in plain words.'], width, height, 'top').map((l) => color.dim(l)))
   }
   const paint = { header: color.boldCyan, note: color.yellow, action: (s: string) => s, alert: color.red, milestone: color.green }
-  return clamp([...head, ...view.map((v) => paint[v.kind](fitLine(v.text, width)))])
+  return clamp(view.map((v) => paint[v.kind](fitLine(v.text, width))))
 }
 
 export async function runPanel(argv: string[]): Promise<void> {

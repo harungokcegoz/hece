@@ -27,7 +27,25 @@ describe('hece panel --once', () => {
   })
 
   it('flow panel explains an empty project', () => {
-    expect(panel(tmpProject(), 'flow').text).toContain('No flow yet.')
+    const r = panel(tmpProject(), 'flow')
+    expect(r.text).toContain('No flow yet.')
+    expect(r.text).not.toContain('home folder')
+    expect(r.text).not.toMatch(/^hece$/m)
+  })
+
+  it('flow panel adds a tip in the home folder', () => {
+    const home = tmpProject()
+    const r = runCli(['panel', 'flow', '--once'], { root: home, env: { ...size, HECE_HOME: home } })
+    expect(stripAnsi(r.stdout)).toContain("Tip: you're in your home folder.")
+  })
+
+  it('panels do not repeat the name the tmux border already shows', () => {
+    const root = tmpProject()
+    expect(panel(root, 'activity').text.split('\n')[0]).toBe("Nothing yet. Claude's steps")
+    expect(panel(root, 'sessions').text.split('\n')[0]).toBe('none yet')
+    fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
+    fs.writeFileSync(statePaths(root).flow, '{oops')
+    expect(panel(root, 'activity').text.split('\n')[0]).toContain('flow.json is unreadable')
   })
 
   it('activity panel speaks plain language and hides raw commands', () => {
