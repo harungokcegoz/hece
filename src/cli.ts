@@ -24,7 +24,7 @@ async function main(argv: string[]): Promise<void> {
     process.stdout.write(USAGE)
     return
   }
-  if (cmd === '--no-frame') return runLaunch(argv.slice(1))
+  if (argv.includes('--no-frame')) return runLaunch(argv.filter((a) => a !== '--no-frame'))
   return runFrame(argv)
 }
 
