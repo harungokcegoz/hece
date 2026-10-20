@@ -2,6 +2,7 @@
 import { runHook } from './hooks/main.js'
 import { runLaunch } from './launch/main.js'
 import { runMcp } from './mcp/main.js'
+import { runPanel } from './panels/main.js'
 import { runStatus } from './status/main.js'
 
 const USAGE = `usage: hece [claude args…]   start Claude Code with hece loaded
@@ -15,6 +16,7 @@ async function main(argv: string[]): Promise<void> {
   if (cmd === 'hook') return runHook()
   if (cmd === 'mcp') return runMcp()
   if (cmd === 'status') return runStatus()
+  if (cmd === 'panel') return runPanel(argv.slice(1))
   if (cmd === 'help') {
     process.stdout.write(USAGE)
     return
