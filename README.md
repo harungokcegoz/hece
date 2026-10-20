@@ -8,7 +8,7 @@
 
 ![The hece frame prototype: an Activity panel on the left, Claude Code in the middle, and a Flow panel on the right with Build as the current step](docs/images/frame-prototype.png)
 
-<sub>**Early prototype from the feasibility spike.** The shipped window has the same layout. Activity and Sessions are on the left, the real Claude Code runs unchanged in the middle, and the Flow panel on the right shows the current step. Claude moved the flow to *Build* by calling hece's MCP server.</sub>
+<sub>**Early prototype from the feasibility spike.** The shipped window keeps the three panes: Activity on the left, the real Claude Code unchanged in the middle, and the Flow panel on the right showing the current step. Claude moved the flow to *Build* by calling hece's MCP server.</sub>
 
 ---
 
@@ -69,9 +69,9 @@ cd your-project
 hece
 ```
 
-`hece` opens the window. The **Activity** panel tells you what Claude is doing in plain words ("Now: saving only a hash of the token…", "changing src/auth/reset.ts", "running the tests"), and the **Flow** panel shows where you are. Use `hece --no-frame` for Claude Code with hece but without panels. Inside an existing tmux session, or when piping (`hece -p …`), hece runs without panels automatically.
+`hece` opens the window. The **Activity** panel tells you what Claude is doing in plain words ("Now: saving only a hash of the token…", "changing src/auth/reset.ts", "running the tests"), and the **Flow** panel shows where you are. Use `hece --no-frame` for Claude Code with hece but without panels. Inside an existing tmux session, or when piping (`hece -p …`), hece runs without panels automatically. On a narrow terminal the side panels are dropped so Claude keeps enough room. Running `hece` again reattaches to the open window (arguments only apply when a new window opens).
 
-It accepts the same arguments as `claude`, for example `hece -c` to continue your last session. Running `hece` again reattaches to the open window.
+It accepts the same arguments as `claude`, for example `hece -c` to continue your last session.
 
 Ask Claude to build something with hece, for example *"Let's build a CLI that prints a greeting, using hece."* To see where you are, run this from your project root:
 
