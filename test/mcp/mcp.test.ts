@@ -5,6 +5,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { CLI, tmpProject, testEnv, runCli } from '../helpers.js'
 import { TOOL_NAMES } from '../../src/mcp/server.js'
+import { readEvents } from '../../src/state/store.js'
+import { statePaths } from '../../src/state/paths.js'
 
 let client: Client | undefined
 afterEach(async () => {
@@ -95,5 +97,18 @@ describe('hece mcp', () => {
     await call(c, 'flow_set_phase', { phase: 'discuss' })
     runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'abc', source: 'startup' }) })
     expect((await call(c, 'flow_get')).text).toContain('"sessionId": "abc"')
+  })
+
+  it('activity_note records a plain-language note under the current slice', async () => {
+    const root = tmpProject()
+    const c = await connect(root)
+    expect(await call(c, 'activity_note', { text: 'reading the code' })).toEqual({
+      text: 'hece: no flow yet; start one with flow_set_phase(discuss)',
+      isError: true,
+    })
+    await call(c, 'flow_set_phase', { phase: 'discuss' })
+    expect((await call(c, 'activity_note', { text: '  checking   how login works ' })).text).toBe('noted')
+    const notes = readEvents(statePaths(root).events).filter((e) => e.event === 'note')
+    expect(notes).toEqual([expect.objectContaining({ event: 'note', text: 'checking how login works', slice: null })])
   })
 })

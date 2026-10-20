@@ -18,6 +18,7 @@ export const TOOL_NAMES = [
   'flow_finish_slice',
   'flow_report_review',
   'prefs_get',
+  'activity_note',
 ] as const
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
@@ -128,6 +129,25 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
       inputSchema: { important: z.number().int().min(0), minor: z.number().int().min(0) },
     },
     async (r) => mutate('flow_report_review', (s) => flow.reportReview(s, r, now()), r),
+  )
+
+  server.registerTool(
+    'activity_note',
+    {
+      description:
+        "Tell the user in one plain sentence what you are about to do and why. It's shown in hece's Activity panel. Call it before each meaningful step. No code, no file contents.",
+      inputSchema: { text: z.string().min(1).max(200) },
+    },
+    async ({ text }) => {
+      try {
+        if (!fs.existsSync(paths.flow)) return fail('hece: no flow yet; start one with flow_set_phase(discuss)')
+        const s = load()
+        appendEvent(paths.events, { at: now(), event: 'note', text: text.replace(/\s+/g, ' ').trim(), slice: s.currentSlice })
+        return ok('noted')
+      } catch (err) {
+        return fail((err as Error).message)
+      }
+    },
   )
 
   server.registerTool(
