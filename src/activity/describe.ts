@@ -28,34 +28,215 @@ export function relPath(root: string, p: string): string {
   return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : path.basename(p)
 }
 
-const COMMAND_RULES: [RegExp, string][] = [
-  [/\b(npm|pnpm|yarn|bun)\s+(run\s+)?test\b|\b(vitest|jest|mocha|pytest)\b|\bgo\s+test\b|\bcargo\s+test\b/, 'running the tests'],
-  [/\b(npm|pnpm|yarn|bun)\s+(i|install|add|ci)\b|\bpip3?\s+install\b|\bcargo\s+add\b|\bbrew\s+install\b/, 'installing packages'],
-  [/\b(npm|pnpm|yarn|bun)\s+run\s+(lint|typecheck|format)\b|\b(eslint|prettier)\b/, 'checking code style and types'],
-  [/\b(npm|pnpm|yarn|bun)\s+run\s+build\b|\btsc\b|\b(cargo|go)\s+build\b|^make\b/, 'building the project'],
-  [/^git\s+commit\b/, 'committing the changes'],
-  [/^git\s+(status|diff|log|show)\b/, 'checking what changed in git'],
-  [/^git\b/, 'using git'],
-  [/^(ls|find|tree|cat|head|tail|wc|grep|rg|pwd)\b/, 'looking around the files'],
-  [/^(mkdir|touch|cp|mv)\b/, 'arranging files'],
-  [/^rm\b/, 'deleting files'],
-  [/^(curl|wget)\b/, 'calling a URL'],
-]
-
-// the part of a shell line that matters: skip `cd …`, `export …` and leading VAR=value
-function mainCommand(command: string): string {
-  const segments = command.trim().split(/\s*(?:&&|\|\||;|\|)\s*/)
-  const seg = segments.find((s) => s && !/^(cd|export|set)\b/.test(s)) ?? ''
-  return seg.replace(/^(\w+=\S*\s+)+/, '')
+// Split a shell line into segments on && || ; | and newlines, ignoring separators inside quotes.
+function splitSegments(command: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let quote = ''
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i]
+    if (quote) {
+      cur += c
+      if (c === '\\' && quote === '"' && i + 1 < command.length) cur += command[++i]
+      else if (c === quote) quote = ''
+      continue
+    }
+    if (c === '\\' && i + 1 < command.length) {
+      cur += c + command[++i]
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      cur += c
+      continue
+    }
+    const two = command.slice(i, i + 2)
+    if (two === '&&' || two === '||') {
+      out.push(cur)
+      cur = ''
+      i++
+    } else if (c === ';' || c === '|' || c === '\n') {
+      out.push(cur)
+      cur = ''
+    } else cur += c
+  }
+  out.push(cur)
+  return out
 }
 
-export function describeCommand(command: string): string {
-  const cmd = mainCommand(command)
-  for (const [re, text] of COMMAND_RULES) if (re.test(cmd)) return text
-  const run = cmd.match(/^(?:node|python3?|ruby|deno|bun|tsx)\s+(?:run\s+)?(\S+)/)
-  if (run) return `running ${path.basename(run[1])}`
+function tokenize(segment: string): string[] {
+  const out: string[] = []
+  let cur = ''
+  let has = false
+  let quote = ''
+  for (let i = 0; i < segment.length; i++) {
+    const c = segment[i]
+    if (quote) {
+      if (c === quote) quote = ''
+      else if (c === '\\' && quote === '"' && i + 1 < segment.length) cur += segment[++i]
+      else cur += c
+    } else if (c === '"' || c === "'") {
+      quote = c
+      has = true
+    } else if (c === '\\' && i + 1 < segment.length) {
+      cur += segment[++i]
+      has = true
+    } else if (/\s/.test(c)) {
+      if (has) out.push(cur)
+      cur = ''
+      has = false
+    } else {
+      cur += c
+      has = true
+    }
+  }
+  if (has) out.push(cur)
+  return out
+}
+
+const WRAPPERS = new Set(['sudo', 'env', 'npx', 'time', 'command'])
+const PKG_MANAGERS = new Set(['npm', 'pnpm', 'yarn', 'bun'])
+const INTERPRETERS = new Set(['node', 'python', 'python3', 'ruby', 'deno', 'bun', 'tsx'])
+const SHELLS = new Set(['sh', 'bash', 'zsh'])
+const INLINE_FLAGS = new Set(['-e', '-c', '-p', '-pe', '--eval', '--print'])
+// interpreter flags whose next argument is a value, not the script
+const VALUE_FLAGS = new Set(['-r', '--require', '--import', '--loader', '--env-file', '-m'])
+
+const nonFlags = (args: string[]): string[] => args.filter((a) => !a.startsWith('-'))
+
+function describeGit(args: string[]): string {
+  let i = 0
+  while (i < args.length && args[i].startsWith('-')) i += args[i] === '-C' || args[i] === '-c' ? 2 : 1
+  const sub = args[i]
+  const rest = args.slice(i + 1)
+  switch (sub) {
+    case 'push':
+      return rest.some((a) => a.startsWith('--force') || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(a) || /^\+\S/.test(a))
+        ? 'force-pushing to a remote'
+        : 'pushing to a remote'
+    case 'reset':
+      return rest.includes('--hard') ? 'discarding local changes' : 'using git'
+    case 'clean':
+      return 'removing untracked files'
+    case 'commit':
+      return 'committing the changes'
+    case 'status':
+    case 'diff':
+    case 'log':
+    case 'show':
+      return 'checking what changed in git'
+    default:
+      return 'using git'
+  }
+}
+
+function describePackageManager(args: string[]): string {
+  const [sub, ...rest] = nonFlags(args)
+  switch (sub) {
+    case 'i':
+    case 'install':
+    case 'add':
+    case 'ci':
+      return 'installing packages'
+    case 'test':
+      return 'running the tests'
+    case 'publish':
+      return 'publishing a package'
+    case 'run': {
+      const name = rest[0]
+      if (!name) return 'running a command'
+      if (name === 'test') return 'running the tests'
+      if (name === 'lint' || name === 'typecheck' || name === 'format') return 'checking code style and types'
+      if (name === 'build') return 'building the project'
+      return `running the ${name} script`
+    }
+    default:
+      return 'running a command'
+  }
+}
+
+function describeInterpreter(args: string[]): string {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (INLINE_FLAGS.has(a)) return 'running inline code'
+    if (a === '-m' && /^(pytest|unittest)$/.test(args[i + 1] ?? '')) return 'running the tests'
+    if (VALUE_FLAGS.has(a)) {
+      i++
+      continue
+    }
+    if (!a.startsWith('-')) return `running ${path.basename(a)}`
+  }
   return 'running a command'
 }
+
+function describeSegment(segment: string): string | null {
+  const tokens = tokenize(segment)
+  // drop leading VAR=value and wrapper programs (with their own flags)
+  while (tokens.length) {
+    if (/^\w+=/.test(tokens[0])) tokens.shift()
+    else if (WRAPPERS.has(tokens[0])) {
+      tokens.shift()
+      while (tokens.length && tokens[0].startsWith('-')) tokens.shift()
+    } else break
+  }
+  if (!tokens.length || /^(cd|export|set)$/.test(tokens[0])) return null
+  const prog = path.basename(tokens[0])
+  const args = tokens.slice(1)
+  const [sub] = nonFlags(args)
+
+  if (SHELLS.has(prog)) return 'running a shell script'
+  if (prog === 'git') return describeGit(args)
+  const BUN_PM_SUBS = ['i', 'install', 'add', 'ci', 'test', 'run', 'publish']
+  if (PKG_MANAGERS.has(prog) && (prog !== 'bun' || (sub !== undefined && BUN_PM_SUBS.includes(sub)))) {
+    return describePackageManager(args)
+  }
+  if (prog === 'deno' && sub === 'run') return describePackageManager(args)
+  if (/^pip3?$/.test(prog) && sub === 'install') return 'installing packages'
+  if (prog === 'cargo' && sub === 'add') return 'installing packages'
+  if (prog === 'brew' && sub === 'install') return 'installing packages'
+  if (/^(vitest|jest|mocha|pytest)$/.test(prog)) return 'running the tests'
+  if ((prog === 'go' || prog === 'cargo') && sub === 'test') return 'running the tests'
+  if (/^(eslint|prettier)$/.test(prog)) return 'checking code style and types'
+  if (prog === 'tsc' || ((prog === 'cargo' || prog === 'go') && sub === 'build')) return 'building the project'
+  if (prog === 'make') return !sub || sub === 'build' || sub === 'all' ? 'building the project' : 'running a make task'
+  if (prog === 'find') {
+    const del = args.includes('-delete') || args.some((a, i) => /^-exec(dir)?$/.test(a) && path.basename(args[i + 1] ?? '') === 'rm')
+    return del ? 'deleting files' : 'looking around the files'
+  }
+  if (/^(ls|tree|cat|head|tail|wc|grep|rg|pwd)$/.test(prog)) return 'looking around the files'
+  if (/^(mkdir|touch|cp|mv)$/.test(prog)) return 'arranging files'
+  if (prog === 'rm') return 'deleting files'
+  if (/^(curl|wget)$/.test(prog)) return 'calling a URL'
+  if (INTERPRETERS.has(prog)) return describeInterpreter(args)
+  return 'running a command'
+}
+
+// Describes every program in the line, in order, by program position only. Never echoes command text.
+export function describeCommand(command: string): string {
+  const parts: string[] = []
+  for (const seg of splitSegments(command)) {
+    const d = describeSegment(seg)
+    if (d && !parts.includes(d)) parts.push(d)
+  }
+  if (!parts.length) return 'running a command'
+  const text = parts.slice(0, 3).join(', then ')
+  return parts.length > 3 ? `${text}, …` : text
+}
+
+function isInside(root: string, p: string): boolean {
+  const abs = path.isAbsolute(p) ? p : path.resolve(root, p)
+  const rel = path.relative(root, abs)
+  return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel)
+}
+
+// like relPath, but says so when the file is outside the project
+function fileLabel(root: string, p: string): string {
+  if (!p) return 'a file'
+  return isInside(root, p) ? relPath(root, p) : `${path.basename(p)} (outside the project)`
+}
+
+// a long or key-looking pattern could be a secret; don't echo it
+const safePattern = (t: string): boolean => t.length <= 40 && !/[A-Za-z0-9_-]{24,}/.test(t)
 
 export function describeTool(tool: string, target: string, root: string): string | null {
   if (HIDDEN_TOOLS.has(tool)) return null
@@ -67,15 +248,15 @@ export function describeTool(tool: string, target: string, root: string): string
   switch (tool) {
     case 'Edit':
     case 'MultiEdit':
-      return `changing ${relPath(root, target)}`
+      return `changing ${fileLabel(root, target)}`
     case 'Write':
-      return `writing ${relPath(root, target)}`
+      return `writing ${fileLabel(root, target)}`
     case 'NotebookEdit':
-      return `changing notebook ${relPath(root, target)}`
+      return `changing notebook ${fileLabel(root, target)}`
     case 'Read':
-      return `reading ${relPath(root, target)}`
+      return `reading ${fileLabel(root, target)}`
     case 'Grep':
-      return target ? `searching the code for "${target}"` : 'searching the code'
+      return target && safePattern(target) ? `searching the code for "${target}"` : 'searching the code'
     case 'Glob':
       return target ? `looking for files matching ${target}` : 'looking for files'
     case 'Bash':
@@ -98,21 +279,48 @@ const num = (v: unknown): number | null => (typeof v === 'number' ? v : null)
 const sliceTitle = (flow: FlowState, n: number | null): string =>
   n === null ? '' : (flow.plan?.slices.find((s) => s.n === n)?.title ?? '')
 
+const FILE_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
+const withReason = (head: string, reason: string): string => (reason ? `${head}: ${reason}` : head)
+
 function describeFlow(ev: HeceEvent, ctx: DescribeContext): ActivityLine | null {
   const n = num(ev.n)
   switch (ev.tool) {
-    case 'flow_set_phase':
-      return { kind: 'milestone', text: `phase: ${str(ev.phase)}`, slice: null }
-    case 'flow_add_decision':
-      return { kind: 'milestone', text: `decided: ${str(ev.title)}`, slice: null }
-    case 'flow_set_plan':
-      return { kind: 'milestone', text: `plan proposed: ${num(ev.slices)} slices, waiting for your approval`, slice: null }
-    case 'flow_start_slice':
-      return { kind: 'milestone', text: `started slice ${n}: ${sliceTitle(ctx.flow, n)}`, slice: n }
+    case 'flow_set_phase': {
+      const phase = str(ev.phase)
+      return { kind: 'milestone', text: phase ? `phase: ${phase}` : 'moved to a new phase', slice: null }
+    }
+    case 'flow_add_decision': {
+      const title = str(ev.title)
+      return { kind: 'milestone', text: title ? `decided: ${title}` : 'recorded a decision', slice: null }
+    }
+    case 'flow_set_plan': {
+      const slices = num(ev.slices)
+      return {
+        kind: 'milestone',
+        text: slices === null ? 'plan proposed, waiting for your approval' : `plan proposed: ${slices} slices, waiting for your approval`,
+        slice: null,
+      }
+    }
+    case 'flow_start_slice': {
+      if (n === null) return { kind: 'milestone', text: 'started a slice', slice: null }
+      const title = sliceTitle(ctx.flow, n)
+      return { kind: 'milestone', text: title ? `started slice ${n}: ${title}` : `started slice ${n}`, slice: n }
+    }
     case 'flow_finish_slice':
-      return { kind: 'milestone', text: `slice ${n} done, waiting for you`, slice: n }
-    case 'flow_report_review':
-      return { kind: 'milestone', text: `review: ${num(ev.important)} important, ${num(ev.minor)} minor`, slice: null }
+      return {
+        kind: 'milestone',
+        text: n === null ? 'a slice is done, waiting for you' : `slice ${n} done, waiting for you`,
+        slice: n,
+      }
+    case 'flow_report_review': {
+      const important = num(ev.important)
+      const minor = num(ev.minor)
+      return {
+        kind: 'milestone',
+        text: important === null || minor === null ? 'review done' : `review: ${important} important, ${minor} minor`,
+        slice: null,
+      }
+    }
     default:
       return null
   }
@@ -120,27 +328,38 @@ function describeFlow(ev: HeceEvent, ctx: DescribeContext): ActivityLine | null 
 
 export function describeEvent(ev: HeceEvent, ctx: DescribeContext): ActivityLine | null {
   switch (ev.event) {
-    case 'note':
-      return { kind: 'note', text: `Now: ${str(ev.text)}`, slice: num(ev.slice) }
+    case 'note': {
+      const text = str(ev.text)
+      return text ? { kind: 'note', text: `Now: ${text}`, slice: num(ev.slice) } : null
+    }
     case 'tool': {
       const text = describeTool(str(ev.tool), str(ev.target), ctx.root)
       return text ? { kind: 'action', text, slice: num(ev.slice) } : null
     }
-    case 'blocked':
-      return {
-        kind: 'alert',
-        text: `hece stopped an edit to ${relPath(ctx.root, str(ev.target))}: ${str(ev.reason).replace(/^hece:\s*/, '')}`,
-        slice: null,
-      }
-    case 'approved':
-      return ev.what === 'plan'
-        ? { kind: 'milestone', text: 'you approved the plan', slice: null }
-        : { kind: 'milestone', text: `you approved slice ${num(ev.n)}`, slice: num(ev.n) }
-    case 'redo_requested':
-      return { kind: 'milestone', text: `you asked to redo slice ${num(ev.n)}`, slice: num(ev.n) }
+    case 'blocked': {
+      const tool = str(ev.tool)
+      const target = str(ev.target)
+      const reason = str(ev.reason).replace(/^hece:\s*/, '')
+      let head: string
+      if (tool === 'Bash') head = `hece stopped a command (${describeCommand(target)})`
+      else if (FILE_TOOLS.has(tool)) head = `hece stopped an edit to ${relPath(ctx.root, target)}`
+      else head = `hece stopped a tool call (${describeTool(tool, target, ctx.root) ?? tool})`
+      return { kind: 'alert', text: withReason(head, reason), slice: null }
+    }
+    case 'approved': {
+      const n = num(ev.n)
+      if (ev.what === 'plan') return { kind: 'milestone', text: 'you approved the plan', slice: null }
+      return { kind: 'milestone', text: n === null ? 'you approved a slice' : `you approved slice ${n}`, slice: n }
+    }
+    case 'redo_requested': {
+      const n = num(ev.n)
+      return { kind: 'milestone', text: n === null ? 'you asked to redo a slice' : `you asked to redo slice ${n}`, slice: n }
+    }
     case 'hook_error':
-    case 'prefs_error':
-      return { kind: 'alert', text: `hece problem: ${str(ev.message)}`, slice: null }
+    case 'prefs_error': {
+      const message = str(ev.message)
+      return { kind: 'alert', text: message ? `hece problem: ${message}` : 'hece problem', slice: null }
+    }
     case 'flow':
       return describeFlow(ev, ctx)
     default:
