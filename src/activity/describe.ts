@@ -58,6 +58,10 @@ function splitSegments(command: string): string[] {
     } else if (c === ';' || c === '|' || c === '\n') {
       out.push(cur)
       cur = ''
+    } else if (c === '&' && command[i - 1] !== '>' && command[i - 1] !== '<' && command[i + 1] !== '>') {
+      // a bare & (background job) separates commands; >&, <&, &> and 2>&1 are redirects
+      out.push(cur)
+      cur = ''
     } else cur += c
   }
   out.push(cur)
@@ -130,8 +134,22 @@ function describeGit(args: string[]): string {
   }
 }
 
+// flags of package managers that take a value; the value must not be read as the subcommand
+const PM_VALUE_FLAGS = new Set(['--prefix', '-w', '--workspace', '--filter', '--cwd', '-C', '--dir'])
+
+// Skips known value flags; `clean` is false when some other flag comes first, since then we can't tell the subcommand.
+function parsePm(args: string[]): { sub: string | undefined; rest: string[]; clean: boolean } {
+  let i = 0
+  while (i < args.length && args[i].startsWith('-')) {
+    if (!PM_VALUE_FLAGS.has(args[i].split('=')[0])) return { sub: undefined, rest: [], clean: false }
+    i += args[i].includes('=') ? 1 : 2
+  }
+  return { sub: args[i], rest: args.slice(i + 1), clean: true }
+}
+
 function describePackageManager(args: string[]): string {
-  const [sub, ...rest] = nonFlags(args)
+  const { sub, rest, clean } = parsePm(args)
+  if (!clean) return 'running a command'
   switch (sub) {
     case 'i':
     case 'install':
@@ -143,8 +161,21 @@ function describePackageManager(args: string[]): string {
     case 'publish':
       return 'publishing a package'
     case 'run': {
-      const name = rest[0]
+      // find the script name, skipping known value flags; an unknown flag makes the name unreliable
+      let unsure = false
+      let name: string | undefined
+      for (let i = 0; i < rest.length; i++) {
+        const a = rest[i]
+        if (!a.startsWith('-')) {
+          name = a
+          break
+        }
+        if (PM_VALUE_FLAGS.has(a.split('=')[0])) {
+          if (!a.includes('=')) i++
+        } else unsure = true
+      }
       if (!name) return 'running a command'
+      if (unsure || !/^[A-Za-z0-9:._-]{1,30}$/.test(name)) return 'running a script'
       if (name === 'test') return 'running the tests'
       if (name === 'lint' || name === 'typecheck' || name === 'format') return 'checking code style and types'
       if (name === 'build') return 'building the project'
@@ -155,6 +186,8 @@ function describePackageManager(args: string[]): string {
   }
 }
 
+const looksLikeFile = (a: string): boolean => a.includes('/') || /\.[A-Za-z0-9]+$/.test(a)
+
 function describeInterpreter(args: string[]): string {
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
@@ -164,7 +197,7 @@ function describeInterpreter(args: string[]): string {
       i++
       continue
     }
-    if (!a.startsWith('-')) return `running ${path.basename(a)}`
+    if (!a.startsWith('-') && looksLikeFile(a)) return `running ${path.basename(a)}`
   }
   return 'running a command'
 }
@@ -187,10 +220,11 @@ function describeSegment(segment: string): string | null {
   if (SHELLS.has(prog)) return 'running a shell script'
   if (prog === 'git') return describeGit(args)
   const BUN_PM_SUBS = ['i', 'install', 'add', 'ci', 'test', 'run', 'publish']
-  if (PKG_MANAGERS.has(prog) && (prog !== 'bun' || (sub !== undefined && BUN_PM_SUBS.includes(sub)))) {
+  const pm = parsePm(args)
+  if (PKG_MANAGERS.has(prog) && (prog !== 'bun' || (pm.clean && pm.sub !== undefined && BUN_PM_SUBS.includes(pm.sub)))) {
     return describePackageManager(args)
   }
-  if (prog === 'deno' && sub === 'run') return describePackageManager(args)
+  if (prog === 'deno' && pm.clean && pm.sub === 'run') return describePackageManager(args)
   if (/^pip3?$/.test(prog) && sub === 'install') return 'installing packages'
   if (prog === 'cargo' && sub === 'add') return 'installing packages'
   if (prog === 'brew' && sub === 'install') return 'installing packages'
@@ -198,10 +232,14 @@ function describeSegment(segment: string): string | null {
   if ((prog === 'go' || prog === 'cargo') && sub === 'test') return 'running the tests'
   if (/^(eslint|prettier)$/.test(prog)) return 'checking code style and types'
   if (prog === 'tsc' || ((prog === 'cargo' || prog === 'go') && sub === 'build')) return 'building the project'
-  if (prog === 'make') return !sub || sub === 'build' || sub === 'all' ? 'building the project' : 'running a make task'
+  if (prog === 'make') {
+    const target = args[0]
+    return target === undefined || target === 'build' || target === 'all' ? 'building the project' : 'running a make task'
+  }
   if (prog === 'find') {
     const del = args.includes('-delete') || args.some((a, i) => /^-exec(dir)?$/.test(a) && path.basename(args[i + 1] ?? '') === 'rm')
-    return del ? 'deleting files' : 'looking around the files'
+    if (del) return 'deleting files'
+    return args.some((a) => /^-(exec|execdir|ok|okdir)$/.test(a)) ? 'running a command on matching files' : 'looking around the files'
   }
   if (/^(ls|tree|cat|head|tail|wc|grep|rg|pwd)$/.test(prog)) return 'looking around the files'
   if (/^(mkdir|touch|cp|mv)$/.test(prog)) return 'arranging files'
@@ -258,7 +296,7 @@ export function describeTool(tool: string, target: string, root: string): string
     case 'Grep':
       return target && safePattern(target) ? `searching the code for "${target}"` : 'searching the code'
     case 'Glob':
-      return target ? `looking for files matching ${target}` : 'looking for files'
+      return target && safePattern(target) ? `looking for files matching ${target}` : 'looking for files'
     case 'Bash':
       return describeCommand(target)
     case 'Task':
@@ -342,7 +380,7 @@ export function describeEvent(ev: HeceEvent, ctx: DescribeContext): ActivityLine
       const reason = str(ev.reason).replace(/^hece:\s*/, '')
       let head: string
       if (tool === 'Bash') head = `hece stopped a command (${describeCommand(target)})`
-      else if (FILE_TOOLS.has(tool)) head = `hece stopped an edit to ${relPath(ctx.root, target)}`
+      else if (FILE_TOOLS.has(tool)) head = `hece stopped an edit to ${fileLabel(ctx.root, target)}`
       else head = `hece stopped a tool call (${describeTool(tool, target, ctx.root) ?? tool})`
       return { kind: 'alert', text: withReason(head, reason), slice: null }
     }

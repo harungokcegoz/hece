@@ -50,6 +50,17 @@ describe('describeCommand', () => {
     ['node --inspect server.js', 'running server.js'],
     ['bun run dev', 'running the dev script'],
     ['curl -H "Authorization: Bearer abc123" https://x', 'calling a URL'],
+    ['npm --prefix test publish', 'publishing a package'],
+    ['yarn --cwd test publish', 'publishing a package'],
+    ['npm run -w build deploy', 'running the deploy script'],
+    ['npm --loglevel silent test', 'running a command'],
+    ['npm test & rm -rf x', 'running the tests, then deleting files'],
+    ['npm test 2>&1', 'running the tests'],
+    ['node --max-old-space-size 4096 app.js', 'running app.js'],
+    ['python -W ignore x.py', 'running x.py'],
+    ['make -f build deploy', 'running a make task'],
+    ['find . -exec sh -c "rm {}" \;', 'running a command on matching files'],
+    ['npm run "$(rm -rf x)"', 'running a script'],
     ['ls && pwd && git status && git push && npm test', 'looking around the files, then checking what changed in git, then pushing to a remote, …'],
   ])('%s → %s', (cmd, text) => {
     expect(describeCommand(cmd)).toBe(text)
@@ -66,6 +77,9 @@ describe('describeTool', () => {
   it('does not echo secret-looking or long grep patterns', () => {
     expect(describeTool('Grep', 'sk_live_51HxYzAbCdEfGhIjKlMnOp', root)).toBe('searching the code')
     expect(describeTool('Grep', 'a '.repeat(30), root)).toBe('searching the code')
+  })
+  it('does not echo secret-looking glob patterns', () => {
+    expect(describeTool('Glob', 'sk_live_51HxYzAbCdEfGhIjKlMnOp/**', root)).toBe('looking for files')
   })
   it('hides hece bookkeeping and housekeeping tools', () => {
     for (const t of ['mcp__plugin_hece_hece__flow_start_slice', 'mcp__hece__activity_note', 'Skill', 'TodoWrite', 'ToolSearch']) {
@@ -93,6 +107,10 @@ describe('describeEvent', () => {
   it('never puts raw command text in a blocked line', () => {
     expect(describeEvent({ at: 1, event: 'blocked', tool: 'Bash', target: 'rm -rf x', reason: 'hece: nope' }, ctx))
       .toEqual({ kind: 'alert', text: 'hece stopped a command (deleting files): nope', slice: null })
+  })
+  it('marks blocked edits outside the project', () => {
+    expect(describeEvent({ at: 1, event: 'blocked', tool: 'Edit', target: '/q/a.ts', reason: 'hece: nope' }, ctx)?.text)
+      .toBe('hece stopped an edit to a.ts (outside the project): nope')
   })
   it('never prints null or empty fields for flow steps', () => {
     expect(describeEvent({ at: 1, event: 'flow', tool: 'flow_start_slice' }, ctx)?.text).toBe('started a slice')
