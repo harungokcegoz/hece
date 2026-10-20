@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import { resolveRoot, statePaths } from '../state/paths.js'
-import { readJson, readEvents } from '../state/store.js'
+import { readJson, HeceEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
 import { loadPrefs } from '../prefs/load.js'
 import { SessionRecord } from '../hooks/handle.js'
@@ -20,6 +20,65 @@ function safeJson<T>(file: string): T | null {
   }
 }
 
+const TAIL_BYTES = 256 * 1024
+const RESTORE = '\x1b[?25h\x1b[?1049l'
+
+// Only the end of a long log matters to the activity view. Reads the last
+// TAIL_BYTES, drops a partial first line, and skips unparsable lines.
+export function readEventsTail(file: string, maxBytes = TAIL_BYTES): HeceEvent[] {
+  let fd: number | undefined
+  try {
+    fd = fs.openSync(file, 'r')
+    const size = fs.fstatSync(fd).size
+    const start = Math.max(0, size - maxBytes)
+    const buf = Buffer.alloc(size - start)
+    let got = 0
+    while (got < buf.length) {
+      const n = fs.readSync(fd, buf, got, buf.length - got, start + got)
+      if (n === 0) break
+      got += n
+    }
+    let text = buf.subarray(0, got).toString('utf8')
+    if (start > 0) {
+      const nl = text.indexOf('\n')
+      text = nl < 0 ? '' : text.slice(nl + 1)
+    }
+    const out: HeceEvent[] = []
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue
+      try {
+        const ev = JSON.parse(line)
+        if (ev && typeof ev.event === 'string') out.push(ev)
+      } catch {
+        // truncated or garbled line: skip it
+      }
+    }
+    return out
+  } catch {
+    return []
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd)
+  }
+}
+
+// Re-read the log only when its size or mtime changed.
+let eventsCache: { file: string; size: number; mtimeMs: number; events: HeceEvent[] } | null = null
+function recentEvents(file: string): HeceEvent[] {
+  let st: fs.Stats
+  try {
+    st = fs.statSync(file)
+  } catch {
+    eventsCache = null
+    return []
+  }
+  if (eventsCache && eventsCache.file === file && eventsCache.size === st.size && eventsCache.mtimeMs === st.mtimeMs) {
+    return eventsCache.events
+  }
+  const events = readEventsTail(file)
+  eventsCache = { file, size: st.size, mtimeMs: st.mtimeMs, events }
+  return events
+}
+
 // Colour is applied after fitting: fitLine strips ANSI, so painting first would lose it.
 export function panelFrame(
   widget: PanelWidget,
@@ -33,36 +92,41 @@ export function panelFrame(
   if (fs.existsSync(paths.flow)) {
     try {
       flow = readJson<FlowState>(paths.flow, emptyFlow())
-    } catch (err) {
-      problem = `⚠ ${(err as Error).message}`
+    } catch {
+      problem = 'unreadable'
     }
   }
   const { width, height } = size
+  const warning = ['⚠ .hece/state/flow.json is unreadable', 'Fix or delete it to continue.']
+  const clamp = (lines: string[]) => lines.slice(0, Math.max(0, height))
+
+  if (problem && widget !== 'sessions') {
+    const head = widget === 'activity' ? [color.bold(fitLine('Activity', width)), ''] : []
+    return clamp([...head, ...fitLines(warning, width, warning.length, 'top').map((l) => color.red(l))])
+  }
 
   if (widget === 'flow') {
     const { prefs } = loadPrefs(env, root)
     const agent = safeJson<{ idle?: boolean }>(paths.agent)
     const lines = flowPanelLines(flow, { guards: prefs.guards, idle: flow && agent ? Boolean(agent.idle) : null })
-    if (problem) lines.unshift(problem, '')
-    return fitFlowLines(lines, width, height).map(colorFlowLine)
+    return clamp(fitFlowLines(lines, width, height).map(colorFlowLine))
   }
 
   if (widget === 'sessions') {
     const lines = sessionsPanelLines(safeJson<SessionRecord[]>(paths.sessions) ?? [])
-    return fitLines(lines, width, height, 'top').map((l, i) => (i === 0 ? color.bold(l) : l))
+    return clamp(fitLines(lines, width, height, 'top').map((l, i) => (i === 0 ? color.bold(l) : l)))
   }
 
-  const view = buildActivity(readEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height - 2))
+  const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height - 2))
   const head = [color.bold(fitLine('Activity', width)), '']
-  if (problem) return [...head, color.red(fitLine(problem, width))]
   if (view.length === 0) {
-    return [
+    return clamp([
       ...head,
       ...fitLines(["Nothing yet. Claude's steps", 'show up here in plain words.'], width, height - 2, 'top').map((l) => color.dim(l)),
-    ]
+    ])
   }
   const paint = { header: color.boldCyan, note: color.yellow, action: (s: string) => s, alert: color.red, milestone: color.green }
-  return [...head, ...view.map((v) => paint[v.kind](fitLine(v.text, width)))]
+  return clamp([...head, ...view.map((v) => paint[v.kind](fitLine(v.text, width)))])
 }
 
 export async function runPanel(argv: string[]): Promise<void> {
@@ -91,26 +155,64 @@ export async function runPanel(argv: string[]): Promise<void> {
   }
 
   const out = process.stdout
-  out.write('\x1b[?1049h\x1b[?25l') // alternate screen, hide cursor
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const
   let last = ''
+  let timer: NodeJS.Timeout | undefined
+  let beat: NodeJS.Timeout | undefined
+  let restored = false
+  let stopped = false
+  let finish: () => void = () => {}
+
+  // Leave the alternate screen and show the cursor, once, even if the output is already gone.
+  const restoreOnce = () => {
+    if (restored) return
+    restored = true
+    try {
+      if (out.writable && !out.destroyed) out.write(RESTORE)
+    } catch {
+      // nothing left to restore on
+    }
+  }
+  const stop = () => {
+    if (stopped) return
+    stopped = true
+    clearInterval(timer)
+    clearInterval(beat)
+    restoreOnce()
+    for (const sig of signals) process.off(sig, stop)
+    finish()
+  }
+  const send = (text: string) => {
+    if (stopped) return
+    if (!out.writable || out.destroyed) return stop()
+    try {
+      out.write(text)
+    } catch {
+      stop()
+    }
+  }
+
+  out.on('error', stop)
+  out.on('close', stop)
+  process.once('exit', restoreOnce) // an uncaught exception still restores the terminal
+  for (const sig of signals) process.once(sig, stop)
+
+  send('\x1b[?1049h\x1b[?25l') // alternate screen, hide cursor
   const draw = (force = false) => {
     const text = frame().map((l) => l + '\x1b[K').join('\r\n') + '\x1b[J'
     if (force || text !== last) {
-      out.write('\x1b[H' + text) // overwrite in place: no clear, no flicker
+      send('\x1b[H' + text) // overwrite in place: no clear, no flicker
       last = text
     }
   }
   draw(true)
-  const timer = setInterval(() => draw(), 300)
+  timer = setInterval(() => draw(), 300)
+  // Nothing is written while the frame is unchanged, so poke the output now and then:
+  // a closed pane or pipe shows up as a failed write and ends the loop.
+  beat = setInterval(() => send('\x1b[0m'), 2000)
   out.on('resize', () => draw(true))
   await new Promise<void>((resolve) => {
-    const stop = () => {
-      clearInterval(timer)
-      out.write('\x1b[?25h\x1b[?1049l')
-      resolve()
-    }
-    process.once('SIGINT', stop)
-    process.once('SIGTERM', stop)
-    process.once('SIGHUP', stop)
+    finish = resolve
+    if (stopped) resolve()
   })
 }
