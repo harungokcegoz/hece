@@ -68,7 +68,9 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
 
   const q = (args: string[]) => args.map(shellQuote).join(' ')
   // when Claude exits, the whole window closes; hece keeps Claude's exit code
-  const middle = `${q([o.node, o.cli, '--no-frame', ...o.claudeArgv])}; rc=$?; ${q([o.tmuxBin, '-L', name, '-f', '/dev/null', 'kill-server'])}; exit $rc`
+  const inner = `${q([o.node, o.cli, '--no-frame', ...o.claudeArgv])}; rc=$?; ${q([o.tmuxBin, '-L', name, '-f', '/dev/null', 'kill-server'])}; exit $rc`
+  // tmux runs this via the user's $SHELL -c; fish and tcsh cannot parse `rc=$?`, so pin it to POSIX sh
+  const middle = q(['/bin/sh', '-c', inner])
   const panel = (w: Widget) => q([o.node, o.cli, 'panel', w])
   const id = (r: { stdout: string }) => r.stdout.trim()
   // tmux expands #{...} in -c, so a literal # has to be doubled

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { spawnSync } from 'node:child_process'
 import { frameName, shellQuote, frameDecision, openFrame, FrameDeps } from '../../src/frame/main.js'
 
 const tty = { stdinTTY: true, stdoutTTY: true, env: {}, tmuxAvailable: true, cliBuilt: true }
@@ -95,9 +96,9 @@ describe('openFrame', () => {
     expect(calls.every((c) => c[0] === 'ATTACH' || (c[0] === '-L' && c[1] === name && c[2] === '-f' && c[3] === '/dev/null'))).toBe(true)
     const newSession = calls.find((c) => c.includes('new-session'))!
     expect(newSession).toContain('/My Project')
-    expect(newSession[newSession.length - 1]).toBe(
-      `/usr/bin/node /h/dist/cli.js --no-frame -c; rc=$?; tmux -L ${name} -f /dev/null kill-server; exit $rc`,
-    )
+    const inner = `/usr/bin/node /h/dist/cli.js --no-frame -c; rc=$?; tmux -L ${name} -f /dev/null kill-server; exit $rc`
+    expect(newSession[newSession.length - 1]).toBe(`/bin/sh -c '${inner}'`)
+    expect(newSession[newSession.length - 1].startsWith("/bin/sh -c '")).toBe(true)
     expect(calls.find((c) => c.includes('-hb'))!.at(-1)).toBe('/usr/bin/node /h/dist/cli.js panel activity')
     expect(calls.find((c) => c.includes('split-window') && !c.includes('-hb'))!.at(-1)).toBe('/usr/bin/node /h/dist/cli.js panel flow')
     expect(calls).toContainEqual([...pre, 'bind', '-n', 'F1', 'select-pane', '-t', '%1'])
@@ -175,6 +176,15 @@ describe('openFrame', () => {
     expect(run(90).some((c) => c.includes('split-window'))).toBe(false)
     expect(run(0).filter((c) => c.includes('split-window'))).toHaveLength(2)
     expect(run(200).filter((c) => c.includes('split-window'))).toHaveLength(2)
+  })
+
+  it('produces a command /bin/sh can parse even with single quotes in paths', () => {
+    const { calls, deps } = fake()
+    openFrame({ ...opts, root: "/My 'Proj'", cli: "/My 'Proj'/dist/cli.js", claudeArgv: ["it's", '-c'] }, deps)
+    const cmd = calls.find((c) => c.includes('new-session'))!.at(-1)!
+    expect(cmd.startsWith("/bin/sh -c '")).toBe(true)
+    const r = spawnSync('/bin/sh', ['-n', '-c', cmd])
+    expect(r.status).toBe(0)
   })
 
   it('escapes # in the working directory', () => {
