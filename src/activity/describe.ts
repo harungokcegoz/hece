@@ -305,15 +305,20 @@ function describeGit(args: string[]): string {
   while (i < args.length && args[i].startsWith('-')) i += args[i] === '-C' || args[i] === '-c' ? 2 : 1
   const sub = args[i]
   const rest = args.slice(i + 1)
+  // --dry-run, or -n alone or inside a short-flag cluster (-fdn)
+  // Anything after a bare -- is a path, not a flag.
+  const flags = rest.includes('--') ? rest.slice(0, rest.indexOf('--')) : rest
+  const dryRun = flags.some((a) => a === '--dry-run' || /^-[a-zA-Z]*n[a-zA-Z]*$/.test(a))
   switch (sub) {
     case 'push':
+      if (dryRun) return 'previewing a push'
       return rest.some((a) => a.startsWith('--force') || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(a) || /^\+\S/.test(a))
         ? 'force-pushing to a remote'
         : 'pushing to a remote'
     case 'reset':
       return rest.includes('--hard') ? 'discarding local changes' : 'using git'
     case 'clean':
-      return 'removing untracked files'
+      return dryRun ? 'previewing a git clean' : 'removing untracked files'
     case 'commit':
       return 'committing the changes'
     case 'status':
