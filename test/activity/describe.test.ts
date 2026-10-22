@@ -107,9 +107,64 @@ describe('describeCommand: long commands, heredocs and redirects', () => {
     expect(describeCommand('echo x >> log.txt')).toBe('writing log.txt')
     expect(describeCommand('echo hi > /dev/null')).toBe('running a command')
     expect(describeCommand('echo hi 2>/dev/null')).toBe('running a command')
-    expect(describeCommand('npm test 2>&1 | tee out.txt')).toBe('running the tests, then running a command')
+    expect(describeCommand('npm test 2>&1 | tee out.txt')).toBe('running the tests, then writing out.txt')
     expect(describeCommand('npm test 2>&1')).toBe('running the tests')
     expect(describeCommand('echo "a > b"')).toBe('running a command')
+  })
+  it.each([
+    '[[ a > b ]]',
+    '[[ a == b]]c && c > d ]]',
+    '! [[ a > b ]]',
+    'if [[ a > b ]]; then git status; fi',
+    'if true; then [[ a > b ]]; fi',
+    '(( a > b ))',
+    '(( (a > b) + 1 ))',
+    'echo $((a > b))',
+    'echo $(((a > b) + 1))',
+    '[[ a > b && c > d ]]',
+    '[[ a > "]]>" && c > d ]]',
+    '(( a > b || c > d ))',
+  ])('does not report comparisons as file writes: %s', (command) => {
+    expect(describeCommand(command)).toBe('running a command')
+  })
+  it('reports real redirects and commands following comparisons', () => {
+    expect(describeCommand('[[ a > b ]] && echo ok > result.txt'))
+      .toBe('running a command, then writing result.txt')
+    expect(describeCommand('(( a > b )); git push --force'))
+      .toBe('running a command, then force-pushing to a remote')
+    expect(describeCommand('echo [[ a > b ]]')).toBe('writing b')
+  })
+  it.each([
+    ['ls >| out.txt', 'looking around the files, then writing out.txt'],
+    ['ls >|out.txt | tee copy.txt', 'looking around the files, then writing out.txt, then writing copy.txt'],
+    ['echo hi >| out.txt', 'writing out.txt'],
+    ['git push --force >| out.txt', 'force-pushing to a remote, then writing out.txt'],
+    ['echo ">|"', 'running a command'],
+    ['ls | npm test', 'looking around the files, then running the tests'],
+  ])('keeps force-overwrite redirects distinct from pipes: %s', (command, text) => {
+    expect(describeCommand(command)).toBe(text)
+  })
+  it.each([
+    ['cmd | tee out.txt', 'running a command, then writing out.txt'],
+    ['tee -a out.txt', 'writing out.txt'],
+    ['tee -ai first.txt second.txt', 'writing first.txt, then writing second.txt'],
+    ['tee --append --ignore-interrupts out.txt', 'writing out.txt'],
+    ['tee -- -out.txt', 'writing -out.txt'],
+    ['tee "file name.txt"', 'writing file name.txt'],
+    ['tee "$TOKEN"', 'writing a file'],
+    ['tee "$(cat ~/.secret)"', 'writing a file'],
+    ['tee $(printf private-value)', 'writing a file'],
+    ['tee `printf private-value`', 'writing a file'],
+    ['tee', 'running a command'],
+    ['tee -a', 'running a command'],
+    ['tee --unknown secret-value out.txt', 'running a command'],
+    ['tee /dev/null', 'running a command'],
+  ])('describes tee writes without echoing flags or expansions: %s', (command, text) => {
+    expect(describeCommand(command)).toBe(text)
+  })
+  it('labels tee paths relative to the project', () => {
+    expect(describeCommand('tee /p/src/out.txt /q/out.txt', '/p'))
+      .toBe('writing src/out.txt, then writing out.txt (outside the project)')
   })
   it('keeps the program description next to a redirect when it says more than "a command"', () => {
     expect(describeCommand('git push --force > out.log')).toBe('force-pushing to a remote, then writing out.log')
