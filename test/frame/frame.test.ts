@@ -425,6 +425,34 @@ describe('fitFrame', () => {
 })
 
 describe('fitFrame duplicate panels', () => {
+  it('removes untagged panes left by an interrupted split and preserves the known middle', () => {
+    const { calls, deps } = fitFake({ panes: '%8\n%0 middle\n%1 left\n%9   \n%2 right\n' })
+    expect(fitFrame(fitOpts, deps)).toBe(0)
+    expect(calls.filter(c => c.includes('kill-pane'))).toEqual([
+      [...pre, 'kill-pane', '-t', '%8'],
+      [...pre, 'kill-pane', '-t', '%9'],
+    ])
+    expect(calls.some(c => c.includes('split-window'))).toBe(false)
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F2', 'select-pane', '-t', '%0'])
+    expect(calls).toContainEqual([...pre, 'resize-pane', '-t', '%1', '-x', '40'])
+    expect(calls).toContainEqual([...pre, 'resize-pane', '-t', '%2', '-x', '36'])
+  })
+
+  it('leaves untagged panes alone when the middle pane cannot be identified', () => {
+    const { calls, deps } = fitFake({ panes: '%8\n%1 left\n%9   \n%2 right\n' })
+    expect(fitFrame(fitOpts, deps)).toBe(0)
+    expect(calls.some(c => c.includes('kill-pane') || c.includes('split-window') || c.includes('resize-pane') || c.includes('bind'))).toBe(false)
+  })
+
+  it('reports a failed untagged-pane cleanup and still binds the surviving known panes', () => {
+    const { calls, deps } = fitFake({ panes: '%0 middle\n%1 left\n%8\n%2 right\n', failOn: 'kill-pane' })
+    expect(fitFrame(fitOpts, deps)).toBe(1)
+    expect(calls).toContainEqual([...pre, 'kill-pane', '-t', '%8'])
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F2', 'select-pane', '-t', '%0'])
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F1', 'select-pane', '-t', '%1'])
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F3', 'select-pane', '-t', '%2'])
+  })
+
   it('keeps the first pane per role, kills the extras and rebinds to the survivors', () => {
     const { calls, deps } = fitFake({ width: '200', panes: '%0 middle\n%1 left\n%5 left\n%2 right\n%6 right\n%7 right\n' })
     expect(fitFrame(fitOpts, deps)).toBe(0)

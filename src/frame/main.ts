@@ -259,15 +259,17 @@ function fitLocked(
   const extras: string[] = []
   for (const line of listed.stdout.split('\n')) {
     const [paneId, role] = line.trim().split(/\s+/)
-    if (!paneId || !role) continue
-    if (panes[role] === undefined) panes[role] = paneId
+    if (!paneId) continue
+    if (!role) extras.push(paneId)
+    else if (panes[role] === undefined) panes[role] = paneId
     else extras.push(paneId)
   }
   const mid = panes.middle
   if (!mid) return 0
 
   let failed = false
-  // an earlier unlocked race may have left two panes with one role: keep the first, close the rest
+  // An interrupted split can leave an untagged pane; an earlier race can leave duplicate roles.
+  // Only clean them up once the middle is known, so an untagged middle is never mistaken for a side.
   for (const extra of extras) if (t('kill-pane', '-t', extra).status !== 0) failed = true
 
   const want = sidesFor(width, o.layout)
