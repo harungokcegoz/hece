@@ -38,6 +38,8 @@ export interface ReviewSummary {
 export interface FlowState {
   version: 1
   phase: Phase
+  /** Absent in older state; only this session may approve or request a redo. */
+  mainSessionId?: string | null
   decisions: Decision[]
   plan: Plan | null
   currentSlice: number | null
@@ -53,5 +55,5 @@ export interface SliceInput {
 }
 
 export function emptyFlow(): FlowState {
-  return { version: 1, phase: 'idle', decisions: [], plan: null, currentSlice: null, review: null, updatedAt: 0 }
+  return { version: 1, phase: 'idle', mainSessionId: null, decisions: [], plan: null, currentSlice: null, review: null, updatedAt: 0 }
 }

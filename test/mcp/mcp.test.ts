@@ -5,7 +5,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { CLI, tmpProject, testEnv, runCli } from '../helpers.js'
 import { TOOL_NAMES } from '../../src/mcp/server.js'
-import { readEvents } from '../../src/state/store.js'
+import { readEvents, readJson } from '../../src/state/store.js'
 import { statePaths } from '../../src/state/paths.js'
 
 let client: Client | undefined
@@ -49,7 +49,18 @@ describe('hece mcp', () => {
   it('runs discuss → plan → slices, with guards enforced across MCP and hooks', async () => {
     const root = tmpProject()
     const c = await connect(root)
-    expect((await call(c, 'flow_set_phase', { phase: 'discuss' })).text).toContain('▸ Discussion')
+    const start = runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's', source: 'startup' }) })
+    expect(start.status).toBe(0)
+    expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
+    const discussion = await call(c, 'flow_set_phase', { phase: 'discuss' })
+    expect(discussion.text).toContain('▸ Discussion')
+    expect(discussion.isError).toBe(false)
+    const created = runCli(['hook'], { root, stdin: JSON.stringify({
+      hook_event_name: 'PostToolUse', session_id: 's', tool_name: 'mcp__plugin_hece_hece__flow_set_phase',
+      tool_input: { phase: 'discuss' }, tool_response: [{ type: 'text', text: discussion.text }],
+    }) })
+    expect(created.status).toBe(0)
+    expect(readJson<{ mainSessionId?: string }>(statePaths(root).flow, {}).mainSessionId).toBe('s')
     expect(fs.readFileSync(path.join(root, '.hece', '.gitignore'), 'utf8')).toBe('state/\n')
     expect((await call(c, 'flow_add_decision', { title: 'Auth', choice: 'JWT', why: 'stateless' })).text).toContain('(1 decision)')
     const plan = await call(c, 'flow_set_plan', {

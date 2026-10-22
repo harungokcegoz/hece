@@ -46,6 +46,7 @@ describe('real Claude Code payloads', () => {
   it('the picker answer "Continue" approves the waiting slice', () => {
     const root = tmpProject()
     seedFlow(root, stopped)
+    runCli(['hook'], { root, stdin: raw('SessionStart.json') })
     const r = runCli(['hook'], { root, stdin: raw('PostToolUse-AskUserQuestion.json') })
     expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user approved slice 1')
   })
@@ -53,6 +54,7 @@ describe('real Claude Code payloads', () => {
   it('the picker answer "Redo" does not approve the waiting slice but records the redo request', () => {
     const root = tmpProject()
     seedFlow(root, stopped)
+    runCli(['hook'], { root, stdin: raw('SessionStart.json') })
     const r = runCli(['hook'], { root, stdin: raw('PostToolUse-AskUserQuestion-redo.json') })
     expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user asked to redo slice 1')
     const flow = readJson<FlowState>(statePaths(root).flow, emptyFlow())
@@ -62,6 +64,7 @@ describe('real Claude Code payloads', () => {
   it('the real typed "continue" approves the waiting slice', () => {
     const root = tmpProject()
     seedFlow(root, stopped)
+    runCli(['hook'], { root, stdin: raw('SessionStart.json') })
     const r = runCli(['hook'], { root, stdin: raw('UserPromptSubmit.json') })
     expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user approved slice 1')
   })

@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
 import { tmpProject, seedFlow } from '../helpers.js'
 import { handleHook, summarizeTool } from '../../src/hooks/handle.js'
 import { statePaths } from '../../src/state/paths.js'
-import { readJson, readEvents } from '../../src/state/store.js'
+import { readJson, readEvents, writeJsonAtomic } from '../../src/state/store.js'
 import { emptyFlow, FlowState } from '../../src/flow/types.js'
 import { setPhase, setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.js'
 import { presetDefaults } from '../../src/prefs/schema.js'
@@ -91,8 +91,8 @@ describe('handleHook', () => {
   })
 
   it('approves on a typed "continue" and tells the agent', () => {
-    seedFlow(root, stopped)
-    const r = handleHook({ hook_event_name: 'UserPromptSubmit', prompt: 'Continue.' }, ctx())
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    const r = handleHook({ hook_event_name: 'UserPromptSubmit', session_id: 'main', prompt: 'Continue.' }, ctx())
     expect(JSON.parse(r.stdout)).toEqual({
       hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'hece: the user approved slice 1' },
     })
@@ -106,15 +106,15 @@ describe('handleHook', () => {
   })
 
   it('approves the plan from the picker answer', () => {
-    seedFlow(root, plan)
-    const r = handleHook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_response: { answers: { 'Plan ok?': 'Continue' } } }, ctx())
+    seedFlow(root, { ...plan, mainSessionId: 'main' })
+    const r = handleHook({ hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion', tool_response: { answers: { 'Plan ok?': 'Continue' } } }, ctx())
     expect(JSON.parse(r.stdout).hookSpecificOutput).toEqual({ hookEventName: 'PostToolUse', additionalContext: 'hece: the user approved the plan' })
     expect(flow().plan!.approved).toBe(true)
   })
 
   it('records a typed "redo" without approving, and tells the agent', () => {
-    seedFlow(root, stopped)
-    const r = handleHook({ hook_event_name: 'UserPromptSubmit', prompt: 'Redo.' }, ctx())
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    const r = handleHook({ hook_event_name: 'UserPromptSubmit', session_id: 'main', prompt: 'Redo.' }, ctx())
     expect(JSON.parse(r.stdout)).toEqual({
       hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: 'hece: the user asked to redo slice 1' },
     })
@@ -123,8 +123,8 @@ describe('handleHook', () => {
   })
 
   it('records a picked Redo with via=picker', () => {
-    seedFlow(root, stopped)
-    const r = handleHook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion', tool_response: { answers: { 'Next?': 'Redo' } } }, ctx())
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    const r = handleHook({ hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion', tool_response: { answers: { 'Next?': 'Redo' } } }, ctx())
     expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user asked to redo slice 1')
     expect(readEvents(statePaths(root).events).find((e) => e.event === 'redo_requested')).toMatchObject({ n: 1, via: 'picker' })
   })
@@ -179,5 +179,218 @@ describe('summarizeTool', () => {
     expect(summarizeTool('Bash', { command: 'ls   -la\n&& pwd' })).toBe('ls -la && pwd')
     expect(summarizeTool('Bash', { command: 'x'.repeat(200) })).toHaveLength(120)
     expect(summarizeTool('Read', undefined)).toBe('')
+  })
+})
+
+
+describe('main-session approvals', () => {
+  const typed = (session_id?: string) => ({ hook_event_name: 'UserPromptSubmit', session_id, prompt: 'ok' })
+  const picked = (session_id?: string) => ({ hook_event_name: 'PostToolUse', session_id, tool_name: 'AskUserQuestion', tool_response: { answers: { 'Plan?': 'Continue' } } })
+
+  it('records the first explicit non-fork SessionStart as owner and never replaces it', () => {
+    seedFlow(root, emptyFlow())
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'fork', source: 'fork' }, ctx())
+    expect(flow().mainSessionId).toBeFalsy()
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'main', source: 'startup' }, ctx())
+    expect(flow().mainSessionId).toBe('main')
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'other', source: 'resume' }, ctx())
+    expect(flow().mainSessionId).toBe('main')
+  })
+
+  it.each([undefined, 'unknown', 'future-source'])('does not guess ownership from SessionStart source %s', source => {
+    seedFlow(root, plan)
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'unknown', source }, ctx())
+    expect(flow().mainSessionId).toBeFalsy()
+    expect(handleHook(typed('unknown'), ctx()).stdout).toBe('')
+    expect(flow().plan!.approved).toBe(false)
+  })
+
+  it('keeps a recorded fork ineligible after resume and selects a later true main', () => {
+    seedFlow(root, plan)
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'fork', source: 'fork' }, ctx())
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'fork', source: 'resume' }, ctx())
+    expect(flow().mainSessionId).toBeFalsy()
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'main', source: 'startup' }, ctx())
+    expect(flow().mainSessionId).toBe('main')
+    expect(handleHook(typed('fork'), ctx()).stdout).toBe('')
+    expect(flow().plan!.approved).toBe(false)
+  })
+
+  it.each([typed, picked])('ignores a fork approval without changing the main flow', approval => {
+    const owned = { ...plan, mainSessionId: 'main' }
+    seedFlow(root, owned)
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'side', source: 'fork' }, ctx())
+    const result = handleHook(approval('side'), ctx())
+    expect(result.stdout).toBe('')
+    expect(flow()).toEqual(owned)
+    expect(readEvents(statePaths(root).events).filter(e => e.event === 'ignored_approval')).toEqual([
+      expect.objectContaining({ event: 'ignored_approval', session: 'side', reason: 'not_main_session' }),
+    ])
+    expect(events()).not.toContain('approved')
+  })
+
+  it.each([typed, picked])('allows an approval from the recorded main session', approval => {
+    seedFlow(root, { ...plan, mainSessionId: 'main' })
+    const result = handleHook(approval('main'), ctx())
+    expect(JSON.parse(result.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user approved the plan')
+    expect(flow().plan!.approved).toBe(true)
+  })
+
+  it.each([undefined, '', 'other'])('rejects approval with missing or different session id %s', session => {
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    expect(handleHook(typed(session), ctx()).stdout).toBe('')
+    expect(flow().plan!.slices[0].status).toBe('stopped')
+    expect(events()).toContain('ignored_approval')
+  })
+
+  it('never claims an unowned legacy flow from an approval payload', () => {
+    const { mainSessionId, ...legacy } = plan
+    seedFlow(root, legacy)
+    expect(handleHook(typed('unrecorded'), ctx()).stdout).toBe('')
+    expect(flow().mainSessionId).toBeFalsy()
+    expect(flow().plan!.approved).toBe(false)
+    expect(readEvents(statePaths(root).events).find(e => e.event === 'ignored_approval')).toMatchObject({ reason: 'missing_main_session' })
+  })
+
+  it('migrates an unowned legacy flow from the earliest trusted recorded non-fork session', () => {
+    const { mainSessionId, ...legacy } = plan
+    seedFlow(root, legacy)
+    writeJsonAtomic(statePaths(root).sessions, [
+      { sessionId: 'side', source: 'fork', at: 1 },
+      { sessionId: 'unknown', source: 'unknown', at: 2 },
+      { sessionId: 'main', source: 'resume', at: 3 },
+      { sessionId: 'later', source: 'startup', at: 4 },
+    ])
+    expect(handleHook(typed('side'), ctx()).stdout).toBe('')
+    expect(flow().mainSessionId).toBe('main')
+    expect(flow().plan!.approved).toBe(false)
+    expect(JSON.parse(handleHook(typed('main'), ctx()).stdout).hookSpecificOutput.additionalContext).toBe('hece: the user approved the plan')
+  })
+
+  it.each(['typed', 'picker'])('ignores a side-session redo via %s rather than unlocking the main slice', via => {
+    const owned = { ...stopped, mainSessionId: 'main' }
+    seedFlow(root, owned)
+    const payload = via === 'typed'
+      ? { ...typed('side'), prompt: 'redo' }
+      : { ...picked('side'), tool_response: { answers: { 'Next?': 'Redo' } } }
+    expect(handleHook(payload, ctx()).stdout).toBe('')
+    expect(flow()).toEqual(owned)
+    expect(events()).toContain('ignored_approval')
+    expect(events()).not.toContain('redo_requested')
+  })
+
+  it.each(['startup', 'fork'])('SessionStart %s still writes nothing without a flow', source => {
+    expect(handleHook({ hook_event_name: 'SessionStart', session_id: 's', source }, ctx())).toEqual({ stdout: '' })
+    expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
+  })
+})
+
+
+describe('first-flow creator ownership', () => {
+  const discussText = 'hece · discuss\n▸ Discussion (0 decisions)\n  Plan\n  Build\n  Review\n  Recap\nguards: on'
+  const created = () => ({
+    hook_event_name: 'PostToolUse', session_id: 'creator', tool_name: 'mcp__plugin_hece_hece__flow_set_phase',
+    tool_input: { phase: 'discuss' }, tool_response: [{ type: 'text', text: discussText }],
+  })
+  const fresh = () => setPhase(emptyFlow(), 'discuss', { guards: true }, 1)
+
+  it('binds only the successful creator result after pre-flow SessionStart wrote nothing', () => {
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'creator', source: 'startup' }, ctx())
+    expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
+    seedFlow(root, fresh())
+    handleHook(created(), ctx())
+    expect(flow().mainSessionId).toBe('creator')
+    seedFlow(root, setPlan(flow(), [{ title: 'A', files: [], kind: 'routine' }], { guards: true }, 2))
+    expect(handleHook({ hook_event_name: 'UserPromptSubmit', session_id: 'side', prompt: 'ok' }, ctx()).stdout).toBe('')
+    expect(flow().plan!.approved).toBe(false)
+    expect(handleHook({ hook_event_name: 'UserPromptSubmit', session_id: 'creator', prompt: 'ok' }, ctx()).stdout).toContain('approved the plan')
+  })
+
+  it.each([
+    { tool_name: 'mcp__other__flow_set_phase' },
+    { tool_name: 'Read' },
+    { hook_event_name: 'PreToolUse' },
+    { tool_input: { phase: 'plan' } },
+    { tool_response: [{ type: 'text', text: 'hece: failed' }] },
+    { tool_response: { isError: true, content: [{ type: 'text', text: discussText }] } },
+    { tool_response: [{ type: 'text', text: discussText }, { type: 'text', text: 'error' }] },
+    { tool_response: undefined },
+    { session_id: undefined },
+    { session_id: '' },
+    { source: 'fork' },
+  ])('rejects an unverified creator payload %j', patch => {
+    seedFlow(root, fresh())
+    handleHook({ ...created(), ...patch }, ctx())
+    expect(flow().mainSessionId).toBeFalsy()
+  })
+
+  it('does not infer creation from a response that differs from the current flow', () => {
+    seedFlow(root, setPlan(fresh(), [{ title: 'A', files: [], kind: 'routine' }], { guards: true }, 2))
+    handleHook(created(), ctx())
+    expect(flow().mainSessionId).toBeFalsy()
+  })
+
+  it('does not bind an explicitly recorded fork even when it creates a pristine discussion', () => {
+    seedFlow(root, fresh())
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'creator', source: 'fork' }, ctx())
+    handleHook(created(), ctx())
+    expect(flow().mainSessionId).toBeFalsy()
+  })
+
+  it('does not bootstrap a recorded fork after it resumes', () => {
+    seedFlow(root, fresh())
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'creator', source: 'fork' }, ctx())
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'creator', source: 'resume' }, ctx())
+    handleHook(created(), ctx())
+    expect(flow().mainSessionId).toBeFalsy()
+  })
+
+  it('never replaces an existing owner from another creator result', () => {
+    seedFlow(root, { ...fresh(), mainSessionId: 'main' })
+    handleHook(created(), ctx())
+    expect(flow().mainSessionId).toBe('main')
+  })
+})
+
+
+describe('unreadable session metadata', () => {
+  it.each(['{oops', 'null', '{}', '[null]'])('keeps edit guards enforced and rejects approval for %s', content => {
+    const owned = { ...stopped, mainSessionId: 'main' }
+    seedFlow(root, owned)
+    fs.writeFileSync(statePaths(root).sessions, content)
+    let edit = { stdout: '' }
+    expect(() => {
+      edit = handleHook({ hook_event_name: 'PreToolUse', session_id: 'main', tool_name: 'Write', tool_input: { file_path: 'src/a.ts' } }, ctx())
+    }).not.toThrow()
+    expect(JSON.parse(edit.stdout).hookSpecificOutput.permissionDecision).toBe('deny')
+    expect(handleHook({ hook_event_name: 'UserPromptSubmit', session_id: 'main', prompt: 'ok' }, ctx()).stdout).toBe('')
+    expect(flow()).toEqual(owned)
+    expect(events()).toContain('hook_error')
+    expect(events()).toContain('ignored_approval')
+  })
+})
+
+
+describe('ownership migration I/O', () => {
+  it('still denies stopped-flow edits when binding the legacy owner would fail to write', () => {
+    const { mainSessionId, ...legacy } = stopped
+    seedFlow(root, legacy)
+    const paths = statePaths(root)
+    writeJsonAtomic(paths.sessions, [{ sessionId: 'main', source: 'startup', at: 1 }])
+    const rename = fs.renameSync
+    const failFlowWrite = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (to === paths.flow) throw new Error('test: flow replacement unavailable')
+      return rename(from, to)
+    })
+    try {
+      let result = { stdout: '' }
+      expect(() => {
+        result = handleHook({ hook_event_name: 'PreToolUse', session_id: 'main', tool_name: 'Write', tool_input: { file_path: 'src/a.ts' } }, ctx())
+      }).not.toThrow()
+      expect(JSON.parse(result.stdout).hookSpecificOutput.permissionDecision).toBe('deny')
+      expect(flow()).toEqual(legacy)
+    } finally {
+      failFlowWrite.mockRestore()
+    }
   })
 })

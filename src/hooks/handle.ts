@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import { statePaths } from '../state/paths.js'
 import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
+import { renderFlow } from '../flow/render.js'
 import { approve, requestRedo } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
 import { describeCommand } from '../activity/describe.js'
@@ -33,6 +34,17 @@ export interface SessionRecord {
 }
 
 const PICKER_TOOL = 'AskUserQuestion'
+const NON_FORK_SOURCES = new Set(['startup', 'resume', 'clear', 'compact'])
+const FLOW_PHASE_TOOLS = new Set(['mcp__plugin_hece_hece__flow_set_phase', 'mcp__hece__flow_set_phase'])
+const hasSessionId = (id: unknown): id is string => typeof id === 'string' && id.trim().length > 0
+
+/** The captured MCP success response must describe this pristine, newly created discussion exactly. */
+function createdDiscussion(p: HookPayload, flow: FlowState, prefs: Prefs): boolean {
+  if (p.hook_event_name !== 'PostToolUse' || !FLOW_PHASE_TOOLS.has(p.tool_name ?? '') || p.tool_input?.phase !== 'discuss') return false
+  if (flow.phase !== 'discuss' || flow.plan !== null || flow.currentSlice !== null || flow.review !== null || !Array.isArray(flow.decisions) || flow.decisions.length !== 0) return false
+  const response = p.tool_response
+  return Array.isArray(response) && response.length === 1 && response[0]?.type === 'text' && response[0]?.text === renderFlow(flow, { guards: prefs.guards })
+}
 
 const oneLine = (raw: string): string => {
   const s = raw.replace(/\s+/g, ' ').trim()
@@ -76,7 +88,52 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     return none
   }
 
+  let sessions: SessionRecord[] = []
+  let sessionsReadable = true
+  try {
+    const recorded = readJson<unknown>(paths.sessions, [])
+    if (!Array.isArray(recorded) || recorded.some(s => !s || typeof s !== 'object' || !hasSessionId(s.sessionId) || typeof s.source !== 'string')) {
+      throw new Error('invalid recorded sessions')
+    }
+    sessions = recorded as SessionRecord[]
+  } catch {
+    // Broken ownership metadata must not prevent the independent edit guards from running.
+    sessionsReadable = false
+    ev('hook_error', { message: 'hece: .hece/state/sessions.json is unreadable; run hece status' })
+  }
+  const forkIds = new Set(sessions.filter(s => s.source === 'fork').map(s => s.sessionId))
+  if (p.hook_event_name === 'SessionStart' && p.source === 'fork' && hasSessionId(p.session_id)) forkIds.add(p.session_id)
+  const bindMain = (id: string) => {
+    flow = { ...flow, mainSessionId: id }
+    writeJsonAtomic(paths.flow, flow)
+  }
+  const bindRecordedMain = () => {
+    if (!sessionsReadable || hasSessionId(flow.mainSessionId)) return
+    const main = sessions.find(s => hasSessionId(s.sessionId) && NON_FORK_SOURCES.has(s.source) && !forkIds.has(s.sessionId))
+    if (main) bindMain(main.sessionId)
+  }
+  // Older flows may already have trustworthy SessionStart records. Approval payloads never claim ownership.
+  // Defer metadata writes outside PreToolUse, so a migration I/O error cannot bypass edit guards.
+  if (p.hook_event_name !== 'PreToolUse') bindRecordedMain()
+  // SessionStart before the first flow writes nothing. The successful creator result bridges that gap;
+  // no other tool, prompt or picker can claim an unowned flow, and recorded forks remain ineligible.
+  if (sessionsReadable && !hasSessionId(flow.mainSessionId) && hasSessionId(p.session_id) && p.source !== 'fork' && !forkIds.has(p.session_id) && createdDiscussion(p, flow, ctx.prefs)) {
+    bindMain(p.session_id)
+  }
+
+  const fromMain = (via: string): boolean => {
+    const reason = !sessionsReadable ? 'unreadable_sessions'
+      : !hasSessionId(flow.mainSessionId) ? 'missing_main_session'
+      : !hasSessionId(p.session_id) ? 'missing_session'
+      : p.session_id !== flow.mainSessionId || p.source === 'fork' || forkIds.has(p.session_id) ? 'not_main_session'
+      : null
+    if (reason === null) return true
+    ev('ignored_approval', { via, reason })
+    return false
+  }
+
   const recordRedo = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
+    if (!fromMain(via)) return none
     const { state, requested } = requestRedo(flow, ctx.now)
     if (requested === null) return none
     writeJsonAtomic(paths.flow, state)
@@ -89,6 +146,7 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
   }
 
   const recordApproval = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
+    if (!fromMain(via)) return none
     const { state, approved } = approve(flow, ctx.now)
     if (!approved) return none
     writeJsonAtomic(paths.flow, state)
@@ -99,10 +157,10 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
 
   switch (p.hook_event_name) {
     case 'SessionStart': {
-      if (p.session_id) {
-        const sessions = readJson<SessionRecord[]>(paths.sessions, [])
+      if (sessionsReadable && hasSessionId(p.session_id)) {
         sessions.push({ sessionId: p.session_id, source: p.source ?? 'unknown', at: ctx.now })
         writeJsonAtomic(paths.sessions, sessions)
+        bindRecordedMain()
       }
       ev('session_start', { source: p.source })
       for (const message of ctx.prefsErrors) ev('prefs_error', { message })

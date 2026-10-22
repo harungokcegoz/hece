@@ -200,3 +200,21 @@ describe('flow', () => {
     })
   })
 })
+
+
+describe('main session across flow transitions', () => {
+  it.each(['idle', 'done'] as const)('preserves main session when starting discussion from %s', phase => {
+    const state = { ...emptyFlow(), phase, mainSessionId: 'main' }
+    const fresh = setPhase(state, 'discuss', { guards: true }, 10)
+    expect(fresh.mainSessionId).toBe('main')
+    expect(fresh.phase).toBe('discuss')
+    expect(state.phase).toBe(phase)
+  })
+
+  it('preserves main session when a plan starts after done', () => {
+    const state = { ...emptyFlow(), phase: 'done' as const, mainSessionId: 'main' }
+    const fresh = setPlan(state, slices, { guards: true }, 10)
+    expect(fresh.mainSessionId).toBe('main')
+    expect(fresh.plan!.approved).toBe(false)
+  })
+})
