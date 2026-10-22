@@ -45,6 +45,15 @@ describe('validation', () => {
     expect(errors).toEqual(['p.yaml: unknown key "gaurds"'])
     expect(prefs.guards).toBe(true)
   })
+  it.each(['constructor', 'toString', 'hasOwnProperty'])('treats inherited object key "%s" as unknown', key => {
+    const { prefs, errors } = resolvePrefs([{ raw: { [key]: 'x' }, source: 'p.yaml' }])
+    expect(errors).toEqual([`p.yaml: unknown key "${key}"`])
+    expect(prefs.guards).toBe(true)
+  })
+  it('treats an inherited key inside a group as unknown', () => {
+    const { errors } = validatePrefs({ slice_stop: { constructor: 'x' } }, 'p.yaml')
+    expect(errors).toEqual(['p.yaml: unknown key "slice_stop.constructor"'])
+  })
   it('names the key and the allowed values for a bad value', () => {
     const { errors } = validatePrefs({ slice_stop: { depth: 'huge' } }, 'p.yaml')
     expect(errors).toEqual(['p.yaml: "slice_stop.depth" is "huge"; allowed: line | short | detailed'])
