@@ -35,7 +35,9 @@ export function fitFlowLines(lines: string[], width: number, height: number): st
 
 export function colorFlowLine(line: string): string {
   const t = line.trimStart()
-  if (line.includes('← waiting for you') || t.startsWith('■') || line.startsWith('Claude: wait')) return color.boldRed(line)
+  // a plan waiting for approval is as urgent as a waiting slice (the ' — ' suffix survives a cut line)
+  const planWaits = t.startsWith('▸ Plan') && t.includes(' — ')
+  if (line.includes('← waiting for you') || t.startsWith('■') || line.startsWith('Claude: wait') || planWaits) return color.boldRed(line)
   if (t.startsWith('▸')) return color.boldYellow(line)
   if (t.startsWith('✓')) return color.green(line)
   if (line.startsWith('hece')) return color.bold(line)

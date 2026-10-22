@@ -62,6 +62,10 @@ describe('flowPanelLines', () => {
   it('colours waiting lines red and the current step yellow', () => {
     expect(colorFlowLine('  ■ 1. A  ← waiting for you')).toContain('\x1b[1;31m')
     expect(colorFlowLine('▸ Build')).toContain('\x1b[1;33m')
+    // a plan waiting for approval is as urgent as a waiting slice
+    for (const l of ['▸ Plan (2 slices) — waiting for approval', '▸ Plan (2 slices) — changed, waiting for approval', '▸ Plan (2 slices) — chan…']) {
+      expect(colorFlowLine(l)).toContain('\x1b[1;31m')
+    }
     expect(stripAnsi(colorFlowLine('✓ Plan (2 slices)'))).toBe('✓ Plan (2 slices)')
   })
   it('keeps a cut status line red', () => {

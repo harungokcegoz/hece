@@ -41,7 +41,7 @@ describe('frameDecision', () => {
     expect(frameDecision(['-p', 'x'], { ...tty, cliBuilt: false })).toBe('plain')
   })
   it('stays plain for claude subcommands', () => {
-    for (const a of ['doctor', 'update', 'install', 'config']) expect(frameDecision([a], tty)).toBe('plain')
+    for (const a of ['doctor', 'update', 'install', 'config', 'plugin', 'setup-token', 'migrate-installer', 'mcp']) expect(frameDecision([a], tty)).toBe('plain')
     expect(frameDecision(['-c', 'doctor'], tty)).toBe('frame')
   })
 })
@@ -132,6 +132,8 @@ function fake(f: FakeOpts = {}) {
   return { calls, errs, deps }
 }
 
+const pre0 = () => ['-L', frameName('/My Project'), '-f', '/dev/null', '-u']
+
 const opts = {
   root: '/My Project',
   claudeArgv: ['-c'],
@@ -152,10 +154,10 @@ describe('openFrame', () => {
     const newSession = calls.find((c) => c.includes('new-session'))!
     expect(newSession).toContain('/My Project')
     const inner = `/usr/bin/node /h/dist/cli.js --no-frame -c; rc=$?; tmux -L ${name} -f /dev/null -u kill-server; exit $rc`
-    expect(newSession[newSession.length - 1]).toBe(`/bin/sh -c '${inner}'`)
-    expect(newSession[newSession.length - 1].startsWith("/bin/sh -c '")).toBe(true)
-    expect(calls.find((c) => c.includes('-hb'))!.at(-1)).toBe('/usr/bin/node /h/dist/cli.js panel activity')
-    expect(calls.find((c) => c.includes('split-window') && !c.includes('-hb'))!.at(-1)).toBe('/usr/bin/node /h/dist/cli.js panel flow')
+    // the pane command is separate argv items: tmux runs it directly, not through the user's login shell
+    expect(newSession.slice(-3)).toEqual(['/bin/sh', '-c', inner])
+    expect(calls.find((c) => c.includes('-hb'))!.slice(-4)).toEqual(['/usr/bin/node', '/h/dist/cli.js', 'panel', 'activity'])
+    expect(calls.find((c) => c.includes('split-window') && !c.includes('-hb'))!.slice(-4)).toEqual(['/usr/bin/node', '/h/dist/cli.js', 'panel', 'flow'])
     expect(calls).toContainEqual([...pre, 'bind', '-n', 'F1', 'select-pane', '-t', '%1'])
     expect(calls).toContainEqual([...pre, 'bind', '-n', 'F2', 'select-pane', '-t', '%0'])
     expect(calls).toContainEqual([...pre, 'bind', '-n', 'F3', 'select-pane', '-t', '%2'])
@@ -227,19 +229,43 @@ describe('openFrame', () => {
     const only = run(120)
     expect(only.some((c) => c.includes('-hb'))).toBe(false)
     expect(only.filter((c) => c.includes('split-window'))).toHaveLength(1)
-    expect(only.find((c) => c.includes('split-window'))!.at(-1)).toContain('panel flow')
+    expect(only.find((c) => c.includes('split-window'))!.slice(-2)).toEqual(['panel', 'flow'])
     expect(run(90).some((c) => c.includes('split-window'))).toBe(false)
     expect(run(0).filter((c) => c.includes('split-window'))).toHaveLength(2)
     expect(run(200).filter((c) => c.includes('split-window'))).toHaveLength(2)
   })
 
-  it('produces a command /bin/sh can parse even with single quotes in paths', () => {
+  it('produces a script /bin/sh can parse even with single quotes in paths', () => {
     const { calls, deps } = fake()
     openFrame({ ...opts, root: "/My 'Proj'", cli: "/My 'Proj'/dist/cli.js", claudeArgv: ["it's", '-c'] }, deps)
-    const cmd = calls.find((c) => c.includes('new-session'))!.at(-1)!
-    expect(cmd.startsWith("/bin/sh -c '")).toBe(true)
-    const r = spawnSync('/bin/sh', ['-n', '-c', cmd])
+    const argv = calls.find((c) => c.includes('new-session'))!.slice(-3)
+    expect(argv.slice(0, 2)).toEqual(['/bin/sh', '-c'])
+    const r = spawnSync('/bin/sh', ['-n', '-c', argv[2]])
     expect(r.status).toBe(0)
+  })
+
+  it('passes pane commands as plain argv items without any shell quoting', () => {
+    const { calls, deps } = fake()
+    openFrame({ ...opts, node: '/My Node/node', cli: "/My 'Proj'/dist/cli.js" }, deps)
+    const left = calls.find((c) => c.includes('-hb'))!
+    expect(left.slice(-4)).toEqual(['/My Node/node', "/My 'Proj'/dist/cli.js", 'panel', 'activity'])
+  })
+
+  it('titles the middle pane Claude', () => {
+    const { calls, deps } = fake()
+    openFrame(opts, deps)
+    expect(calls).toContainEqual([...pre0(), 'select-pane', '-t', '%0', '-T', 'Claude'])
+  })
+
+  it('closes the whole window when the Claude pane exits, as a backstop', () => {
+    const { calls, deps } = fake()
+    openFrame(opts, deps)
+    expect(calls).toContainEqual([...pre0(), 'set-hook', '-g', 'pane-exited', 'if -F "#{==:#{hook_pane},%0}" "kill-server"'])
+  })
+
+  it('does not claim to keep the exit code of Claude', () => {
+    const src = fs.readFileSync(path.resolve('src/frame/main.ts'), 'utf8')
+    expect(src).not.toContain("hece keeps Claude's exit code")
   })
 
   it('escapes # in the working directory', () => {
@@ -274,7 +300,7 @@ describe('openFrame roles and hooks', () => {
   it('installs the hooks even when the window starts without side panels', () => {
     const { calls, deps } = fake()
     openFrame({ ...opts, columns: 90 }, deps)
-    expect(calls.filter((c) => c.includes('set-hook'))).toHaveLength(2)
+    expect(calls.filter((c) => c.includes('set-hook')).map((c) => c[c.indexOf('-g') + 1]).sort()).toEqual(['client-attached', 'client-resized', 'pane-exited'])
   })
 })
 
@@ -326,10 +352,10 @@ describe('fitFrame', () => {
     const splits = calls.filter((c) => c.includes('split-window'))
     expect(splits).toHaveLength(2)
     expect(splits[0]).toContain('-hb')
-    expect(splits[0].at(-1)).toBe('/usr/bin/node /h/dist/cli.js panel activity')
+    expect(splits[0].slice(-4)).toEqual(['/usr/bin/node', '/h/dist/cli.js', 'panel', 'activity'])
     expect(splits[1]).toContain('-h')
     expect(splits[1]).not.toContain('-hb')
-    expect(splits[1].at(-1)).toBe('/usr/bin/node /h/dist/cli.js panel flow')
+    expect(splits[1].slice(-4)).toEqual(['/usr/bin/node', '/h/dist/cli.js', 'panel', 'flow'])
     for (const s of splits) expect(s[s.indexOf('-c') + 1]).toBe('/My Project')
     expect(calls).toContainEqual([...pre, 'set', '-p', '-t', '%10', '@hece_role', 'left'])
     expect(calls).toContainEqual([...pre, 'set', '-p', '-t', '%11', '@hece_role', 'right'])

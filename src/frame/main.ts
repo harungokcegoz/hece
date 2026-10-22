@@ -31,7 +31,7 @@ export { isHomeRoot }
 const LEFT_WIDTH = 40
 const RIGHT_WIDTH = 36
 const MIN_CLAUDE_WIDTH = 60
-const CLAUDE_SUBCOMMANDS = new Set(['doctor', 'update', 'install', 'config'])
+const CLAUDE_SUBCOMMANDS = new Set(['doctor', 'update', 'install', 'config', 'plugin', 'setup-token', 'migrate-installer', 'mcp'])
 const PLAIN_FLAGS = new Set(['-p', '--print', '--version', '-v', '--help', '-h'])
 const TITLES: Record<Widget, string> = { flow: 'Flow', activity: 'Activity', sessions: 'Sessions', none: '' }
 
@@ -110,10 +110,12 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
   if (hasSession()) return attach()
 
   const q = (args: string[]) => args.map(shellQuote).join(' ')
-  // when Claude exits, the whole window closes; hece keeps Claude's exit code
+  // when Claude exits, the whole window closes (the pane-exited hook below is the backstop).
+  // hece itself returns the status of the tmux attach, not Claude's exit code.
   const inner = `${q([o.node, o.cli, '--no-frame', ...o.claudeArgv])}; rc=$?; ${q([o.tmuxBin, '-L', name, '-f', '/dev/null', '-u', 'kill-server'])}; exit $rc`
-  // tmux runs this via the user's $SHELL -c; fish and tcsh cannot parse `rc=$?`, so pin it to POSIX sh
-  const middle = q(['/bin/sh', '-c', inner])
+  // pane commands go to tmux as separate argv items, which it runs directly: no login shell ($SHELL may be
+  // fish or tcsh) and no quoting to get wrong. `rc=$?` needs POSIX sh, so the middle pane pins /bin/sh.
+  const middle = ['/bin/sh', '-c', inner]
   const id = (r: { stdout: string }) => r.stdout.trim()
   // tmux expands #{...} in -c, so a literal # has to be doubled
   const cwd = o.root.replace(/#/g, '##')
@@ -125,7 +127,7 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
 
   const { left: leftW, right: rightW } = sidesFor(o.columns, o.layout)
 
-  const created = t('new-session', '-d', '-s', name, '-c', cwd, '-x', '200', '-y', '50', '-P', '-F', '#{pane_id}', middle)
+  const created = t('new-session', '-d', '-s', name, '-c', cwd, '-x', '200', '-y', '50', '-P', '-F', '#{pane_id}', ...middle)
   if (created.status !== 0) {
     // a parallel launch may have started the window between our check and now
     if (hasSession()) return attach()
@@ -136,7 +138,7 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
   if (!mid) return fail('start tmux', 'no pane id')
 
   t('set', '-p', '-t', mid, '@hece_role', 'middle')
-  const side = (which: 'left' | 'right', w: Widget) => addSide(t, mid, which, w, cwd, q([o.node, o.cli, 'panel', w]))
+  const side = (which: 'left' | 'right', w: Widget) => addSide(t, mid, which, w, cwd, [o.node, o.cli, 'panel', w])
   let left: string | undefined
   if (leftW !== 'none') {
     const r = side('left', leftW)
@@ -164,7 +166,10 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
     ['automatic-rename', 'off'],
   ]) t('set', '-g', opt, value)
 
-  t('select-pane', '-t', mid, '-T', 'claude')
+  t('select-pane', '-t', mid, '-T', 'Claude')
+
+  // panels must never outlive Claude, even if the wrapper script dies before its own kill-server
+  t('set-hook', '-g', 'pane-exited', `if -F "#{==:#{hook_pane},${mid}}" "kill-server"`)
 
   // re-check the layout whenever a terminal attaches or resizes: panels come back when there is room
   // (the cd matters: run-shell may not start in the project folder)
@@ -194,11 +199,11 @@ function addSide(
   which: 'left' | 'right',
   widget: Widget,
   cwd: string,
-  command: string,
+  command: string[],
 ): { ok: true; pane: string } | { ok: false; detail: string } {
   const flag = which === 'left' ? '-hb' : '-h'
   const width = which === 'left' ? LEFT_WIDTH : RIGHT_WIDTH
-  const r = t('split-window', '-d', flag, '-t', mid, '-l', String(width), '-c', cwd, '-P', '-F', '#{pane_id}', command)
+  const r = t('split-window', '-d', flag, '-t', mid, '-l', String(width), '-c', cwd, '-P', '-F', '#{pane_id}', ...command)
   const pane = r.stdout.trim()
   if (r.status !== 0 || !pane) return { ok: false, detail: r.stderr.trim() || 'no pane id' }
   t('set', '-p', '-t', pane, '@hece_role', which)
@@ -253,7 +258,6 @@ function fitLocked(
 
   const want = sidesFor(width, o.layout)
   const cwd = o.root.replace(/#/g, '##')
-  const q = (args: string[]) => args.map(shellQuote).join(' ')
   const sides: Array<['left' | 'right', Widget, number]> = [
     ['left', want.left, LEFT_WIDTH],
     ['right', want.right, RIGHT_WIDTH],
@@ -261,7 +265,7 @@ function fitLocked(
   for (const [which, widget] of sides) {
     const have = panes[which]
     if (widget !== 'none' && !have) {
-      const r = addSide(t, mid, which, widget, cwd, q([o.node, o.cli, 'panel', widget]))
+      const r = addSide(t, mid, which, widget, cwd, [o.node, o.cli, 'panel', widget])
       if (!r.ok) failed = true
       else panes[which] = r.pane
     } else if (widget === 'none' && have) {
