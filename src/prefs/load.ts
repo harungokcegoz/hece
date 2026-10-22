@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import YAML from 'yaml'
-import { Prefs, resolvePrefs } from './schema.js'
+import { resolvePrefs } from './schema.js'
+import type { Prefs } from './schema.js'
 
 export function prefsFiles(env: NodeJS.ProcessEnv, root: string, home: string = os.homedir()) {
   const configHome = env.XDG_CONFIG_HOME || path.join(home, '.config')

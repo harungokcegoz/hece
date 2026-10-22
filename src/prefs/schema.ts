@@ -96,7 +96,7 @@ export function validatePrefs(raw: unknown, source: string): { flat: Record<stri
   const walk = (obj: Record<string, unknown>, prefix: string) => {
     for (const [k, v] of Object.entries(obj)) {
       const key = prefix ? `${prefix}.${k}` : k
-      const rule = RULES[key]
+      const rule = Object.hasOwn(RULES, key) ? RULES[key] : undefined
       if (!rule) {
         const isGroup = Object.keys(RULES).some((r) => r.startsWith(key + '.'))
         if (isGroup && v !== null && typeof v === 'object' && !Array.isArray(v)) {
