@@ -4,6 +4,7 @@ import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
 import { approve, requestRedo } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
+import { describeCommand } from '../activity/describe.js'
 import { EDIT_TOOLS, decideTool, isContinueIntent, isRedoIntent, pickerApproved, pickerRedo } from '../guards/guards.js'
 
 export interface HookPayload {
@@ -117,12 +118,15 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
       setIdle(false)
       const name = p.tool_name ?? ''
       const target = summarizeTool(name, p.tool_input)
+      // describe the whole command: `target` is squashed and cut, so a late force-push or a heredoc would be missed
+      const command = typeof p.tool_input?.command === 'string' ? p.tool_input.command : ''
+      const desc = name === 'Bash' ? { desc: describeCommand(command, ctx.root) } : {}
       const d = decideTool(flow, ctx.prefs, { name, input: p.tool_input }, { root: ctx.root, configDir: ctx.configDir })
       if (!d.allow) {
-        ev('blocked', { tool: name, target, reason: d.reason })
+        ev('blocked', { tool: name, target, ...desc, reason: d.reason })
         return deny(d.reason)
       }
-      ev('tool', { tool: name, target, slice: flow.currentSlice })
+      ev('tool', { tool: name, target, ...desc, slice: flow.currentSlice })
       return none
     }
     case 'PostToolUse': {

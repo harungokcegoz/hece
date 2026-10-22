@@ -4,21 +4,26 @@
 
 *hece* is Turkish for "syllable". *Hecelemek* means to spell a word out syllable by syllable. hece does that to features: it breaks them into pieces small enough to understand, discuss and defend.
 
-> **Status: early (v0.1, core engine).** It works inside Claude Code today. The three-pane terminal app (panels framing your agent) is next. See the [roadmap](#roadmap).
+> **Status: early (v0.1).** `hece` opens one terminal window: Activity on the left, Claude Code in the middle, your flow on the right. The panels are read-only for now. See the [roadmap](#roadmap).
 
 ![The hece frame prototype: an Activity panel on the left, Claude Code in the middle, and a Flow panel on the right with Build as the current step](docs/images/frame-prototype.png)
 
-<sub>**Prototype from the feasibility spike, not shipped yet.** Activity and Sessions are on the left, the real Claude Code runs unchanged in the middle, and the Flow panel on the right shows the current step. Claude moved the flow to *Build* by calling hece's MCP server. This becomes the real `hece` frame in [plan 2](#roadmap).</sub>
+<sub>**Early prototype from the feasibility spike.** The shipped window keeps the three panes: Activity on the left, the real Claude Code unchanged in the middle, and the Flow panel on the right showing the current step. Claude moved the flow to *Build* by calling hece's MCP server.</sub>
 
 ---
 
 ## Why
 
-AI coding agents got fast and reliable enough that many of us moved from *building with them* to *watching them build*. Features ship and tests pass. Afterwards you can't answer *how did you connect A to B?*, *what is the flow?* or *why this approach?*
+AI coding agents keep getting better, and they'll keep getting better. They're built and measured on one thing: **finishing the task**. Every improvement makes them more autonomous. They ask fewer questions, stop less, and hand you bigger finished chunks. That's great for output. For the person who has to own the code, it's a slow problem.
 
-The cause is size and pace, not the agent's quality. Plans and explanations arrive in chunks too big to digest, so approval becomes trust instead of understanding. Over the years that turns into skill atrophy: you can describe what you want, but you can't build, debug or defend it.
+Many of us have moved from *building with* agents to *watching them build*. Features ship and tests pass. Afterwards you can't answer *how did you connect A to B?*, *what is the flow?* or *why this approach?* Plans and explanations arrive in chunks too big to digest, so approval becomes trust instead of understanding. Over the years that turns into skill atrophy: you can describe what you want, but you can't build, debug or defend it.
 
-hece keeps you in the loop without giving up the agent.
+The agent isn't the problem. It's doing exactly what it was made for. Nothing in it is designed to keep *you* involved. As agents get more capable, the builders who want to stay real builders need the opposite of more autonomy: **more involvement**. That means:
+- discussing decisions instead of receiving them;
+- seeing each step instead of the final diff;
+- understanding the code well enough to defend it.
+
+hece puts you back in the loop without giving up the agent. It changes the pace and the size of what you hand over, not the model.
 
 ## What it does
 
@@ -53,6 +58,7 @@ hece mcp           ── the agent reports progress: phases, decisions, slices
   /plugin install superpowers@claude-plugins-official
   ```
 - Node.js 20 or newer
+- [tmux](https://github.com/tmux/tmux) for the three-pane window (`brew install tmux` on macOS). Without it, `hece` still works, just without panels.
 
 ## Quick start
 
@@ -68,7 +74,9 @@ cd your-project
 hece
 ```
 
-`hece` starts Claude Code with hece loaded. It accepts the same arguments as `claude`, for example `hece -c` to continue your last session.
+`hece` opens the window. The **Activity** panel tells you what Claude is doing in plain words ("Now: saving only a hash of the token…", "changing src/auth/reset.ts", "running the tests"), and the **Flow** panel shows where you are. Use `hece --no-frame` for Claude Code with hece but without panels. Inside an existing tmux session, or when piping (`hece -p …`), hece runs without panels automatically. On a narrow terminal the side panels are dropped so Claude keeps enough room. Running `hece` again reattaches to the open window (arguments only apply when a new window opens).
+
+It accepts the same arguments as `claude`, for example `hece -c` to continue your last session.
 
 Ask Claude to build something with hece, for example *"Let's build a CLI that prints a greeting, using hece."* To see where you are, run this from your project root:
 
@@ -117,7 +125,7 @@ See [`adapters/`](adapters/). Contributions for other agents are very welcome.
 ## Roadmap
 
 1. **Core engine** ✅: state, flow, preferences, guards, hook, MCP server, skills, Claude Code plugin.
-2. **Frame:** one terminal window with configurable side panels (Flow, Activity, Sessions) around your agent, side chats, and panel ↔ agent events.
+2. **Frame:** ✅ the three-pane window with plain-language Activity and the live Flow (2a). Next (2b): panel keys that talk to Claude (Enter = continue), side chats, and arrow navigation.
 3. **Onboarding:** `hece setup`, `hece prefs`, `hece doctor`.
 4. **Release:** bundled plugin install (no build step), npm package, more agents.
 

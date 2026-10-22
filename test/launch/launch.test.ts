@@ -57,6 +57,16 @@ describe('hece launch (process)', () => {
     expect(JSON.parse(r.stdout)).toEqual(['--plugin-dir', REPO_ROOT, '-c', '--model', 'sonnet'])
   })
 
+  it('--no-frame runs Claude directly and drops the flag', () => {
+    const r = launch(['--no-frame', '-c'])
+    expect(JSON.parse(r.stdout)).toEqual(['--plugin-dir', REPO_ROOT, '-c'])
+  })
+
+  it('--no-frame is dropped wherever it appears', () => {
+    const r = launch(['-c', '--no-frame'])
+    expect(JSON.parse(r.stdout)).toEqual(['--plugin-dir', REPO_ROOT, '-c'])
+  })
+
   it('passes a positional prompt through', () => {
     const r = launch(['fix the bug'])
     expect(JSON.parse(r.stdout)).toEqual(['--plugin-dir', REPO_ROOT, 'fix the bug'])

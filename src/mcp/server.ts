@@ -18,11 +18,22 @@ export const TOOL_NAMES = [
   'flow_finish_slice',
   'flow_report_review',
   'prefs_get',
+  'activity_note',
 ] as const
 
 type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean }
 const ok = (text: string): ToolResult => ({ content: [{ type: 'text', text }] })
 const fail = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
+
+// The agent writes this text and the panel prints it to the user's terminal: no control or bidi characters,
+// and nothing that looks like a key.
+export function cleanNote(text: string): string {
+  return text
+    .replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[A-Za-z0-9_-]{24,}/g, '[hidden]')
+    .trim()
+}
 
 export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?: () => number }): McpServer {
   const now = opts.now ?? Date.now
@@ -128,6 +139,28 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
       inputSchema: { important: z.number().int().min(0), minor: z.number().int().min(0) },
     },
     async (r) => mutate('flow_report_review', (s) => flow.reportReview(s, r, now()), r),
+  )
+
+  server.registerTool(
+    'activity_note',
+    {
+      description:
+        "During a hece flow, tell the user in one plain sentence what you're about to do and why (shown in hece's Activity panel). No code, no file contents. Outside a flow it does nothing.",
+      inputSchema: { text: z.string().min(1).max(200) },
+    },
+    async ({ text }) => {
+      try {
+        // a note is passive: it never asks the agent to start a flow, and writes nothing without one
+        if (!fs.existsSync(paths.flow)) return ok('no hece flow; nothing recorded')
+        const s = load()
+        const clean = cleanNote(text)
+        if (!clean) return ok('empty note; nothing recorded')
+        appendEvent(paths.events, { at: now(), event: 'note', text: clean, slice: s.currentSlice })
+        return ok('noted')
+      } catch (err) {
+        return fail((err as Error).message)
+      }
+    },
   )
 
   server.registerTool(

@@ -1,12 +1,16 @@
 #!/usr/bin/env node
+import { runFrame, runFrameFit } from './frame/main.js'
 import { runHook } from './hooks/main.js'
 import { runLaunch } from './launch/main.js'
 import { runMcp } from './mcp/main.js'
+import { runPanel } from './panels/main.js'
 import { runStatus } from './status/main.js'
 
-const USAGE = `usage: hece [claude args…]   start Claude Code with hece loaded
-       hece status           show where you are in the flow
-       hece help             show this help
+const USAGE = `usage: hece [claude args…]          open the hece window: Activity · Claude · Flow
+       hece --no-frame [claude args…]   Claude Code with hece loaded, no panels
+       hece status                      show where you are in the flow
+       hece panel <flow|activity|sessions>   run one panel (used by the window)
+       hece help                        show this help
 (hece hook and hece mcp are run by Claude Code itself)
 `
 
@@ -15,11 +19,14 @@ async function main(argv: string[]): Promise<void> {
   if (cmd === 'hook') return runHook()
   if (cmd === 'mcp') return runMcp()
   if (cmd === 'status') return runStatus()
+  if (cmd === 'frame-fit') return runFrameFit()
+  if (cmd === 'panel') return runPanel(argv.slice(1))
   if (cmd === 'help') {
     process.stdout.write(USAGE)
     return
   }
-  return runLaunch(argv)
+  if (argv.includes('--no-frame')) return runLaunch(argv.filter((a) => a !== '--no-frame'))
+  return runFrame(argv)
 }
 
 await main(process.argv.slice(2))

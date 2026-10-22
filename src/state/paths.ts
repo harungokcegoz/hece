@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 export interface StatePaths {
@@ -28,4 +30,20 @@ export function statePaths(root: string): StatePaths {
     agent: path.join(stateDir, 'agent.json'),
     captures: path.join(stateDir, 'captures'),
   }
+}
+
+/** The user's home folder; HECE_HOME lets tests pretend. */
+export function homeDir(env: NodeJS.ProcessEnv): string {
+  return env.HECE_HOME || os.homedir()
+}
+
+export function isHomeRoot(root: string, home: string): boolean {
+  const real = (p: string) => {
+    try {
+      return fs.realpathSync(p)
+    } catch {
+      return p
+    }
+  }
+  return real(root) === real(home)
 }

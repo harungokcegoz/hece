@@ -33,6 +33,9 @@ src/guards     the two guards + human-approval detection
 src/hooks      `hece hook`: Claude Code hook handler
 src/mcp        `hece mcp`: MCP server for the agent
 src/status     `hece status`
+src/activity   plain-language Activity lines from hece events
+src/panels     `hece panel`: Flow / Activity / Sessions renderers
+src/frame      `hece`: the tmux three-pane window
 skills/        markdown skills the agent follows
 .claude-plugin/, hooks/, .mcp.json   Claude Code plugin wiring
 adapters/      other agents (planned)

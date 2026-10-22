@@ -38,6 +38,7 @@ Call `flow_set_phase` whenever the phase changes. `hece status` (and hece's pane
 ### build: one slice at a time
 For slice n:
 1. `flow_start_slice(n)`.
+   Narrate as you go. Before each meaningful step (reading code to understand it, changing a file, running the tests), call `activity_note` with one plain sentence saying what you're doing and why, e.g. `activity_note("Saving only a hash of the reset token, so a DB leak can't reset passwords")`. No code, no file contents. The user sees these in hece's Activity panel.
 2. If `delegate.build` differs from your own model, dispatch this **one** task through superpowers:subagent-driven-development with `model` = `delegate.build`. Otherwise implement it yourself, following the TDD discipline superpowers requires.
 3. Review the result yourself (spec, then quality) and fix problems before the user sees the slice.
 4. `flow_finish_slice(n, summary, connects_to)`.

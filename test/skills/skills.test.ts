@@ -48,4 +48,8 @@ describe('skills', () => {
   it('never offers an approve tool', () => {
     for (const name of EXPECTED) expect(read(name)).not.toMatch(/flow_approve/)
   })
+
+  it('flow tells the agent to narrate with activity_note', () => {
+    expect(read('flow')).toContain('activity_note')
+  })
 })

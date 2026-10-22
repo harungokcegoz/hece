@@ -50,6 +50,8 @@ The root cause is **size and pace**, not the agent's quality. Explanations and p
 | D6 | **State in plain files**, not sockets or a daemon. | Crash-safe, any number of readers, nothing to supervise, and you can `cat` exactly what hece believes is happening. |
 | D7 | **Panel actions are structured events**, not English prompts. | In the spike, a panel "continue" phrased as English was (correctly) refused by the agent. Skills handle named events deterministically. |
 | D8 | **Onboarding is a plain wizard**, not an LLM conversation. | Free, instant, identical for everyone. |
+| D9 | **Activity speaks plain language, not commands** (amended 2026-10-20). Two layers: *intent lines* the agent writes through an `activity_note` MCP tool (what it is doing and why), and *action lines* translated from hook events by simple rules ("changing auth/reset.js", "running the tests"). hece's own bookkeeping calls are hidden; raw commands are not shown. | Raw tool calls (`ls -la && find …`, `ToolSearch {…}`) are noise, not understanding. Only the agent knows its intent; rules make actions readable at no cost. A summarizing model stays an optional later extra. |
+| D10 | **Frame MVP panels are plain ANSI renderers**, not Ink (amended 2026-10-20). | The MVP panels are read-only: pure render functions plus a redraw-on-change loop are simpler to test. Ink comes in when panels become interactive (plan 2b). |
 
 ## 5. The flow
 
@@ -192,7 +194,7 @@ One terminal window, three panes, via tmux on a private socket (`tmux -L hece`):
  guards: on · transport: channel                              F1 left  F2 agent  F3 right
 ```
 
-- **Widgets:** *Flow* (phases, decisions, slices, current step; arrows + Enter open a step's summary, read-only), *Activity* (live tool calls for the current slice), *Sessions* (main + side chats; arrows to switch).
+- **Widgets:** *Flow* (phases, decisions, slices, current step; arrows + Enter open a step's summary, read-only), *Activity* (what is happening in the current slice, in plain language: the agent's intent lines plus readable action lines, grouped by slice; see D9), *Sessions* (main + side chats; arrows to switch).
 - Side panels keep fixed widths on resize (re-applied on `client-resized` / `window-resized`).
 - Mouse on; F1/F2/F3 focus; no tmux keybindings needed.
 - **Side chats:** `claude --resume <session_id> --fork-session` in a hidden tmux window, swapped into the middle. Closing a side chat kills it; nothing returns to main.
