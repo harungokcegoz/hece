@@ -48,7 +48,11 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
     if (!fs.existsSync(file)) {
       fs.mkdirSync(paths.heceDir, { recursive: true })
       fs.writeFileSync(file, 'state/\n')
+      return
     }
+    const text = fs.readFileSync(file, 'utf8')
+    const ignored = text.split(/\r?\n/).some((line) => ['state', 'state/', '/state', '/state/'].includes(line.trim()))
+    if (!ignored) fs.appendFileSync(file, (text === '' || text.endsWith('\n') ? '' : '\n') + 'state/\n')
   }
 
   const mutate = (tool: string, fn: (s: FlowState) => FlowState, extra: Record<string, unknown> = {}): ToolResult => {
