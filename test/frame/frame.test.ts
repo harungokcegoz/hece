@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -379,5 +379,78 @@ describe('fitFrame', () => {
     expect(fitFrame(fitOpts, fitFake({ panes: all3, width: '90', failOn: 'kill-pane' }).deps)).toBe(1)
     const throwing: FrameDeps = { tmux: () => { throw new Error('gone') }, attach: () => 0 }
     expect(fitFrame(fitOpts, throwing)).toBe(1)
+  })
+})
+
+describe('fitFrame duplicate panels', () => {
+  it('keeps the first pane per role, kills the extras and rebinds to the survivors', () => {
+    const { calls, deps } = fitFake({ width: '200', panes: '%0 middle\n%1 left\n%5 left\n%2 right\n%6 right\n%7 right\n' })
+    expect(fitFrame(fitOpts, deps)).toBe(0)
+    expect(calls.filter((c) => c.includes('kill-pane'))).toEqual([
+      [...pre, 'kill-pane', '-t', '%5'],
+      [...pre, 'kill-pane', '-t', '%6'],
+      [...pre, 'kill-pane', '-t', '%7'],
+    ])
+    expect(calls.some((c) => c.includes('split-window'))).toBe(false)
+    expect(calls).toContainEqual([...pre, 'resize-pane', '-t', '%1', '-x', '40'])
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F1', 'select-pane', '-t', '%1'])
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F3', 'select-pane', '-t', '%2'])
+  })
+
+  it('still resizes and rebinds when a kill-pane fails', () => {
+    const { calls, deps } = fitFake({ width: '200', panes: '%0 middle\n%1 left\n%5 left\n%2 right\n', failOn: 'kill-pane' })
+    fitFrame(fitOpts, deps)
+    expect(calls).toContainEqual([...pre, 'resize-pane', '-t', '%2', '-x', '36'])
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F1', 'select-pane', '-t', '%1'])
+    expect(calls).toContainEqual([...pre, 'bind', '-n', 'F3', 'select-pane', '-t', '%2'])
+  })
+
+  it('still rebinds when removing a side for a narrow window fails', () => {
+    const { calls, deps } = fitFake({ width: '90', panes: all3, failOn: 'kill-pane' })
+    fitFrame(fitOpts, deps)
+    expect(calls.filter((c) => c.includes('bind'))).toHaveLength(3)
+  })
+})
+
+describe('fitFrame at the same time', () => {
+  it('leaves exactly one pane per role when two run together', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-race-'))
+    const state = path.join(dir, 'state.json')
+    fs.writeFileSync(state, JSON.stringify({ next: 10, panes: [{ id: '%0', role: 'middle' }] }))
+    const env = {
+      ...process.env,
+      TMPDIR: dir,
+      FAKE_TMUX_STATE: state,
+      FAKE_TMUX_BIN: path.resolve('test/frame/support/fake-tmux.mjs'),
+      FIT_ROOT: '/race proj',
+    }
+    const run = () =>
+      new Promise<number>((resolve) => {
+        const p = spawn('node', ['--import', 'tsx', path.resolve('test/frame/support/fit-runner.ts')], { env, stdio: 'ignore' })
+        p.on('exit', (c) => resolve(c ?? 1))
+      })
+    const codes = await Promise.all([run(), run()])
+    expect(codes).toEqual([0, 0])
+    const roles = (JSON.parse(fs.readFileSync(state, 'utf8')).panes as Array<{ role: string }>).map((p) => p.role).sort()
+    expect(roles).toEqual(['left', 'middle', 'right'])
+  })
+})
+
+describe('frame-fit command', () => {
+  it('exits 0 and prints nothing even when tmux fails', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-fit-'))
+    const bin = path.join(root, 'tmux')
+    fs.writeFileSync(
+      bin,
+      '#!/bin/sh\ncase "$*" in\n*display*) echo 200;;\n*list-panes*) echo "%0 middle";;\n*) echo nope >&2; exit 1;;\nesac\n',
+      { mode: 0o755 },
+    )
+    const r = spawnSync(process.execPath, ['--import', 'tsx', path.resolve('src/cli.ts'), 'frame-fit'], {
+      encoding: 'utf8',
+      env: { ...process.env, HECE_ROOT: root, HECE_TMUX_BIN: bin, TMPDIR: root, XDG_CONFIG_HOME: path.join(root, '.c') },
+    })
+    expect(r.status).toBe(0)
+    expect(r.stdout).toBe('')
+    expect(r.stderr).toBe('')
   })
 })

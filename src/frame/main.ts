@@ -3,6 +3,7 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pluginRoot, runLaunch } from '../launch/main.js'
+import { withFitLock } from './lock.js'
 import { loadPrefs } from '../prefs/load.js'
 import { resolveRoot, homeDir, isHomeRoot } from '../state/paths.js'
 import { Widget } from '../prefs/schema.js'
@@ -188,53 +189,72 @@ function addSide(
   return { ok: true, pane }
 }
 
-/** Brings a running window's side panels in line with its current width. Returns an exit code; never throws. */
+/**
+ * Brings a running window's side panels in line with its current width. Returns an exit code; never throws.
+ * Hooks fire in bursts (attach plus resize, drag-resize), so the whole fit runs under a per-window lock and
+ * reads the window only after taking it. When the lock cannot be had in time the fit is skipped.
+ */
 export function fitFrame(
   o: { root: string; layout: { left: Widget; right: Widget }; node: string; cli: string },
   deps: FrameDeps,
 ): number {
   try {
-    const name = frameName(o.root)
-    // trailing colon: the session's current window. A bare =name makes `display` answer with an empty string.
-    const exact = `=${name}:`
-    const t: Tmux = (...args) => deps.tmux(['-L', name, '-f', '/dev/null', '-u', ...args])
-    const w = t('display', '-p', '-t', exact, '#{window_width}')
-    const width = Number(w.stdout.trim())
-    if (w.status !== 0 || !Number.isInteger(width) || width <= 0) return 0
-    const listed = t('list-panes', '-t', exact, '-F', '#{pane_id} #{@hece_role}')
-    if (listed.status !== 0) return 0
-    const panes: Record<string, string | undefined> = {}
-    for (const line of listed.stdout.split('\n')) {
-      const [paneId, role] = line.trim().split(/\s+/)
-      if (paneId && role) panes[role] ??= paneId
-    }
-    const mid = panes.middle
-    if (!mid) return 0
-
-    const want = sidesFor(width, o.layout)
-    const cwd = o.root.replace(/#/g, '##')
-    const q = (args: string[]) => args.map(shellQuote).join(' ')
-    const sides: Array<['left' | 'right', Widget, number]> = [
-      ['left', want.left, LEFT_WIDTH],
-      ['right', want.right, RIGHT_WIDTH],
-    ]
-    for (const [which, widget] of sides) {
-      const have = panes[which]
-      if (widget !== 'none' && !have) {
-        const r = addSide(t, mid, which, widget, cwd, q([o.node, o.cli, 'panel', widget]))
-        if (!r.ok) return 1
-        panes[which] = r.pane
-      } else if (widget === 'none' && have) {
-        if (t('kill-pane', '-t', have).status !== 0) return 1
-        panes[which] = undefined
-      }
-    }
-    for (const [which, , size] of sides) if (panes[which]) t('resize-pane', '-t', panes[which]!, '-x', String(size))
-    bindKeys(t, mid, panes.left, panes.right)
-    return 0
+    const locked = withFitLock(frameName(o.root), () => fitLocked(o, deps))
+    return locked.ran ? locked.value : 0
   } catch {
     return 1
   }
+}
+
+function fitLocked(
+  o: { root: string; layout: { left: Widget; right: Widget }; node: string; cli: string },
+  deps: FrameDeps,
+): number {
+  const name = frameName(o.root)
+  // trailing colon: the session's current window. A bare =name makes `display` answer with an empty string.
+  const exact = `=${name}:`
+  const t: Tmux = (...args) => deps.tmux(['-L', name, '-f', '/dev/null', '-u', ...args])
+  const w = t('display', '-p', '-t', exact, '#{window_width}')
+  const width = Number(w.stdout.trim())
+  if (w.status !== 0 || !Number.isInteger(width) || width <= 0) return 0
+  const listed = t('list-panes', '-t', exact, '-F', '#{pane_id} #{@hece_role}')
+  if (listed.status !== 0) return 0
+  const panes: Record<string, string | undefined> = {}
+  const extras: string[] = []
+  for (const line of listed.stdout.split('\n')) {
+    const [paneId, role] = line.trim().split(/\s+/)
+    if (!paneId || !role) continue
+    if (panes[role] === undefined) panes[role] = paneId
+    else extras.push(paneId)
+  }
+  const mid = panes.middle
+  if (!mid) return 0
+
+  let failed = false
+  // an earlier unlocked race may have left two panes with one role: keep the first, close the rest
+  for (const extra of extras) if (t('kill-pane', '-t', extra).status !== 0) failed = true
+
+  const want = sidesFor(width, o.layout)
+  const cwd = o.root.replace(/#/g, '##')
+  const q = (args: string[]) => args.map(shellQuote).join(' ')
+  const sides: Array<['left' | 'right', Widget, number]> = [
+    ['left', want.left, LEFT_WIDTH],
+    ['right', want.right, RIGHT_WIDTH],
+  ]
+  for (const [which, widget] of sides) {
+    const have = panes[which]
+    if (widget !== 'none' && !have) {
+      const r = addSide(t, mid, which, widget, cwd, q([o.node, o.cli, 'panel', widget]))
+      if (!r.ok) failed = true
+      else panes[which] = r.pane
+    } else if (widget === 'none' && have) {
+      if (t('kill-pane', '-t', have).status === 0) panes[which] = undefined
+      else failed = true
+    }
+  }
+  for (const [which, widget, size] of sides) if (widget !== 'none' && panes[which]) t('resize-pane', '-t', panes[which]!, '-x', String(size))
+  bindKeys(t, mid, panes.left, panes.right)
+  return failed ? 1 : 0
 }
 
 export async function runFrame(argv: string[]): Promise<void> {
@@ -281,13 +301,14 @@ export async function runFrame(argv: string[]): Promise<void> {
 }
 
 // Hidden command run by the tmux hooks: re-fit the window of the project in the current folder.
+// Always exits 0: a hook has nowhere useful to show an error, and tmux would put it on the status line.
 export async function runFrameFit(): Promise<void> {
   try {
     const env = process.env
     const tmuxBin = env.HECE_TMUX_BIN || 'tmux'
     const root = resolveRoot(env)
     const { prefs } = loadPrefs(env, root)
-    process.exitCode = fitFrame(
+    fitFrame(
       { root, layout: prefs.layout, node: process.execPath, cli: path.join(pluginRoot(), 'dist', 'cli.js') },
       {
         tmux: (args) => {
@@ -298,6 +319,7 @@ export async function runFrameFit(): Promise<void> {
       },
     )
   } catch {
-    process.exitCode = 1
+    // nothing to report to
   }
+  process.exitCode = 0
 }
