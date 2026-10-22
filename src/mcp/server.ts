@@ -25,6 +25,16 @@ type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean
 const ok = (text: string): ToolResult => ({ content: [{ type: 'text', text }] })
 const fail = (text: string): ToolResult => ({ content: [{ type: 'text', text }], isError: true })
 
+// The agent writes this text and the panel prints it to the user's terminal: no control or bidi characters,
+// and nothing that looks like a key.
+export function cleanNote(text: string): string {
+  return text
+    .replace(/[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/[A-Za-z0-9_-]{24,}/g, '[hidden]')
+    .trim()
+}
+
 export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?: () => number }): McpServer {
   const now = opts.now ?? Date.now
   const paths = statePaths(opts.root)
@@ -135,14 +145,17 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
     'activity_note',
     {
       description:
-        "Tell the user in one plain sentence what you are about to do and why. It's shown in hece's Activity panel. Call it before each meaningful step. No code, no file contents.",
+        "During a hece flow, tell the user in one plain sentence what you're about to do and why (shown in hece's Activity panel). No code, no file contents. Outside a flow it does nothing.",
       inputSchema: { text: z.string().min(1).max(200) },
     },
     async ({ text }) => {
       try {
-        if (!fs.existsSync(paths.flow)) return fail('hece: no flow yet; start one with flow_set_phase(discuss)')
+        // a note is passive: it never asks the agent to start a flow, and writes nothing without one
+        if (!fs.existsSync(paths.flow)) return ok('no hece flow; nothing recorded')
         const s = load()
-        appendEvent(paths.events, { at: now(), event: 'note', text: text.replace(/\s+/g, ' ').trim(), slice: s.currentSlice })
+        const clean = cleanNote(text)
+        if (!clean) return ok('empty note; nothing recorded')
+        appendEvent(paths.events, { at: now(), event: 'note', text: clean, slice: s.currentSlice })
         return ok('noted')
       } catch (err) {
         return fail((err as Error).message)

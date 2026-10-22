@@ -102,13 +102,30 @@ describe('hece mcp', () => {
   it('activity_note records a plain-language note under the current slice', async () => {
     const root = tmpProject()
     const c = await connect(root)
-    expect(await call(c, 'activity_note', { text: 'reading the code' })).toEqual({
-      text: 'hece: no flow yet; start one with flow_set_phase(discuss)',
-      isError: true,
-    })
+    expect(await call(c, 'activity_note', { text: 'reading the code' })).toEqual({ text: 'no hece flow; nothing recorded', isError: false })
+    expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
     await call(c, 'flow_set_phase', { phase: 'discuss' })
     expect((await call(c, 'activity_note', { text: '  checking   how login works ' })).text).toBe('noted')
     const notes = readEvents(statePaths(root).events).filter((e) => e.event === 'note')
     expect(notes).toEqual([expect.objectContaining({ event: 'note', text: 'checking how login works', slice: null })])
+  })
+
+  it('activity_note never tells the agent to start a flow', async () => {
+    const c = await connect(tmpProject())
+    const tool = (await c.listTools()).tools.find((t) => t.name === 'activity_note')!
+    expect(tool.description).toBe(
+      "During a hece flow, tell the user in one plain sentence what you're about to do and why (shown in hece's Activity panel). No code, no file contents. Outside a flow it does nothing.",
+    )
+  })
+
+  it('activity_note cleans the text before storing it', async () => {
+    const root = tmpProject()
+    const c = await connect(root)
+    await call(c, 'flow_set_phase', { phase: 'discuss' })
+    const key = 'sk_live_' + 'AbCdEfGh12345678'.repeat(2)
+    const text = `reading\u0007 the\u202E code\u0085 now\u2066\u2069\n\tand key ${key} done`
+    expect((await call(c, 'activity_note', { text })).text).toBe('noted')
+    const notes = readEvents(statePaths(root).events).filter((e) => e.event === 'note')
+    expect(notes[0].text).toBe('reading the code now and key [hidden] done')
   })
 })

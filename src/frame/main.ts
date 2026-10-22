@@ -72,12 +72,29 @@ export function homeNote(root: string, home: string): string {
     : ''
 }
 
+export function alreadyOpenMessage(name: string): string {
+  return `hece: this project's window is already open. Switch to it with: tmux -L ${name} attach -t =${name}\n`
+}
+
+/**
+ * Inside tmux, hece does not nest a window. Plain mode is right unless this project's window is already
+ * open: then a second Claude would run in the same project, so the user is pointed to the first one.
+ */
 export function frameDecision(
   argv: string[],
-  o: { stdinTTY: boolean; stdoutTTY: boolean; env: NodeJS.ProcessEnv; tmuxAvailable: boolean; cliBuilt: boolean },
-): 'frame' | 'plain' | 'plain-no-tmux' | 'plain-not-built' {
-  if (!o.stdinTTY || !o.stdoutTTY || o.env.TMUX || argv.some((a) => PLAIN_FLAGS.has(a))) return 'plain'
+  o: {
+    stdinTTY: boolean
+    stdoutTTY: boolean
+    env: NodeJS.ProcessEnv
+    tmuxAvailable: boolean
+    cliBuilt: boolean
+    /** only looked at inside tmux */
+    windowOpen?: boolean
+  },
+): 'frame' | 'plain' | 'plain-no-tmux' | 'plain-not-built' | 'already-open' {
+  if (!o.stdinTTY || !o.stdoutTTY || argv.some((a) => PLAIN_FLAGS.has(a))) return 'plain'
   if (argv[0] !== undefined && CLAUDE_SUBCOMMANDS.has(argv[0])) return 'plain'
+  if (o.env.TMUX) return o.windowOpen ? 'already-open' : 'plain'
   if (!o.cliBuilt) return 'plain-not-built'
   return o.tmuxAvailable ? 'frame' : 'plain-no-tmux'
 }
@@ -263,13 +280,25 @@ export async function runFrame(argv: string[]): Promise<void> {
   const tmuxAvailable = () => spawnSync(tmuxBin, ['-V'], { stdio: 'ignore' }).status === 0
   const cli = path.join(pluginRoot(), 'dist', 'cli.js')
   const cliBuilt = fs.existsSync(cli)
+  const interactive = Boolean(process.stdin.isTTY && process.stdout.isTTY)
+  // inside tmux: is this project's own window already open on its private socket?
+  const windowOpen = () => {
+    const name = frameName(resolveRoot(env))
+    return spawnSync(tmuxBin, ['-L', name, '-f', '/dev/null', '-u', 'has-session', '-t', `=${name}`], { stdio: 'ignore' }).status === 0
+  }
   const decision = frameDecision(argv, {
     stdinTTY: Boolean(process.stdin.isTTY),
     stdoutTTY: Boolean(process.stdout.isTTY),
     env,
-    tmuxAvailable: Boolean(process.stdin.isTTY && process.stdout.isTTY && !env.TMUX) && tmuxAvailable(),
+    tmuxAvailable: interactive && !env.TMUX && tmuxAvailable(),
     cliBuilt,
+    windowOpen: Boolean(interactive && env.TMUX && !argv.some((a) => PLAIN_FLAGS.has(a)) && tmuxAvailable() && windowOpen()),
   })
+  if (decision === 'already-open') {
+    process.stderr.write(alreadyOpenMessage(frameName(resolveRoot(env))))
+    process.exitCode = 1
+    return
+  }
   if (decision === 'plain') return runLaunch(argv)
   const printHomeNote = () => {
     const note = homeNote(resolveRoot(env), homeDir(env))

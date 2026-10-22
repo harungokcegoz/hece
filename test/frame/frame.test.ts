@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { frameName, shellQuote, tmuxQuote, sidesFor, fitFrame, isHomeRoot, homeNote, frameDecision, openFrame, FrameDeps } from '../../src/frame/main.js'
+import { frameName, alreadyOpenMessage, shellQuote, tmuxQuote, sidesFor, fitFrame, isHomeRoot, homeNote, frameDecision, openFrame, FrameDeps } from '../../src/frame/main.js'
 
 const tty = { stdinTTY: true, stdoutTTY: true, env: {}, tmuxAvailable: true, cliBuilt: true }
 
@@ -16,6 +16,21 @@ describe('frameDecision', () => {
     expect(frameDecision([], { ...tty, stdoutTTY: false })).toBe('plain')
     expect(frameDecision([], { ...tty, env: { TMUX: '/tmp/tmux-1/default,1,0' } })).toBe('plain')
     for (const a of ['-p', '--print', '--version', '-v', '--help', '-h']) expect(frameDecision([a, 'x'], tty)).toBe('plain')
+  })
+  it('does not start a second Claude inside tmux when this project window is open', () => {
+    const inTmux = { ...tty, env: { TMUX: '/tmp/tmux-1/default,1,0' } }
+    expect(frameDecision([], { ...inTmux, windowOpen: true })).toBe('already-open')
+    expect(frameDecision([], { ...inTmux, windowOpen: false })).toBe('plain')
+    expect(frameDecision([], inTmux)).toBe('plain')
+    // print/info mode, subcommands and non-terminals never get in the way
+    expect(frameDecision(['-p', 'x'], { ...inTmux, windowOpen: true })).toBe('plain')
+    expect(frameDecision(['doctor'], { ...inTmux, windowOpen: true })).toBe('plain')
+    expect(frameDecision([], { ...inTmux, stdoutTTY: false, windowOpen: true })).toBe('plain')
+  })
+  it('says how to get to the open window', () => {
+    expect(alreadyOpenMessage('hece-abc')).toBe(
+      "hece: this project's window is already open. Switch to it with: tmux -L hece-abc attach -t =hece-abc\n",
+    )
   })
   it('falls back with a hint when tmux is missing', () => {
     expect(frameDecision([], { ...tty, tmuxAvailable: false })).toBe('plain-no-tmux')
