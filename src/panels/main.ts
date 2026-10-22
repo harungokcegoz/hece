@@ -5,18 +5,22 @@ import { FlowState, emptyFlow } from '../flow/types.js'
 import { loadPrefs } from '../prefs/load.js'
 import { SessionRecord } from '../hooks/handle.js'
 import { buildActivity } from '../activity/view.js'
-import { fitLine, fitLines } from './fit.js'
+import { fitLine, fitLines, displayWidth } from './fit.js'
 import { color } from './color.js'
-import { flowPanelLines, fitFlowLines, colorFlowLine, sessionsPanelLines } from './views.js'
+import { flowPanelLines, fitFlowLines, colorFlowLine, sessionsPanelLines, isFlowState, isSessionList, isAgentState } from './views.js'
 
 export type PanelWidget = 'flow' | 'activity' | 'sessions'
 const WIDGETS: readonly string[] = ['flow', 'activity', 'sessions']
 
-function safeJson<T>(file: string): T | null {
+// Reads a state file that must pass `valid`. A missing file is `undefined`; one that is
+// invalid JSON or the wrong shape is `'unreadable'`, so the panel can say so plainly.
+function readChecked<T>(file: string, valid: (v: unknown) => v is T): T | undefined | 'unreadable' {
+  if (!fs.existsSync(file)) return undefined
   try {
-    return readJson<T | null>(file, null)
+    const v = readJson<unknown>(file, undefined)
+    return valid(v) ? v : 'unreadable'
   } catch {
-    return null
+    return 'unreadable'
   }
 }
 
@@ -90,37 +94,35 @@ export function panelFrame(
   size: { width: number; height: number },
 ): string[] {
   const paths = statePaths(root)
-  let flow: FlowState | null = null
-  let problem = ''
-  if (fs.existsSync(paths.flow)) {
-    try {
-      flow = readJson<FlowState>(paths.flow, emptyFlow())
-    } catch {
-      problem = 'unreadable'
-    }
-  }
   const { width, height } = size
-  const warning = ['⚠ .hece/state/flow.json is unreadable', 'Fix or delete it to continue.']
   const clamp = (lines: string[]) => lines.slice(0, Math.max(0, height))
-
-  if (problem && widget !== 'sessions') {
+  const warn = (name: string) => {
+    const head = `⚠ .hece/state/${name} is unreadable`
+    // sessions.json makes this 41 columns: break before "is unreadable" rather than truncate it
+    const warning = displayWidth(head) > width ? [`⚠ .hece/state/${name}`, 'is unreadable', 'Fix or delete it to continue.'] : [head, 'Fix or delete it to continue.']
     return clamp(fitLines(warning, width, warning.length, 'top').map((l) => color.red(l)))
   }
 
+  if (widget === 'sessions') {
+    const sessions = readChecked(paths.sessions, isSessionList)
+    if (sessions === 'unreadable') return warn('sessions.json')
+    return clamp(fitLines(sessionsPanelLines(sessions ?? []), width, height, 'top'))
+  }
+
+  const flowRead = readChecked(paths.flow, isFlowState)
+  if (flowRead === 'unreadable') return warn('flow.json')
+  const flow: FlowState | null = flowRead ?? null
+
   if (widget === 'flow') {
     const { prefs } = loadPrefs(env, root)
-    const agent = safeJson<{ idle?: boolean }>(paths.agent)
+    const agent = flow ? readChecked(paths.agent, isAgentState) : undefined
+    if (agent === 'unreadable') return warn('agent.json')
     const lines = flowPanelLines(flow, {
       guards: prefs.guards,
-      idle: flow && agent ? Boolean(agent.idle) : null,
+      idle: flow && agent ? agent.idle : null,
       home: !flow && isHomeRoot(root, homeDir(env)),
     })
     return clamp(fitFlowLines(lines, width, height).map(colorFlowLine))
-  }
-
-  if (widget === 'sessions') {
-    const lines = sessionsPanelLines(safeJson<SessionRecord[]>(paths.sessions) ?? [])
-    return clamp(fitLines(lines, width, height, 'top'))
   }
 
   const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height))

@@ -124,6 +124,69 @@ describe('hece panel --once', () => {
     expect(r.text).not.toContain('Nothing yet')
   })
 
+  describe('malformed state shapes', () => {
+    const bad = (root: string, file: 'flow' | 'sessions' | 'agent', content: string) => {
+      fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
+      fs.writeFileSync(statePaths(root)[file], content)
+    }
+    const friendly = (text: string, name: string) => {
+      expect(text).toContain(`⚠ .hece/state/${name} is unreadable`)
+      expect(text).toContain('Fix or delete it to continue.')
+      expect(text).not.toMatch(/is not a function|Cannot read|undefined|TypeError/)
+    }
+
+    for (const content of ['{}', '[]', 'null', '"x"', '{"version":1,"phase":"nope","decisions":[],"plan":null,"currentSlice":null}', '{"version":1,"phase":"build","decisions":[],"plan":{"slices":{}},"currentSlice":null}']) {
+      it(`flow.json = ${content} shows a friendly message on every flow-based panel`, () => {
+        const root = tmpProject()
+        bad(root, 'flow', content)
+        for (const widget of ['flow', 'activity']) {
+          const r = panel(root, widget)
+          expect(r.status).toBe(0)
+          friendly(r.text, 'flow.json')
+        }
+      })
+    }
+
+    for (const content of ['{}', '"x"', '[1]', '[{"sessionId":5}]', '{oops']) {
+      it(`sessions.json = ${content} shows a friendly message`, () => {
+        const root = tmpProject()
+        bad(root, 'sessions', content)
+        const r = runCli(['panel', 'sessions', '--once'], { root, env: { ...size, HECE_PANEL_WIDTH: '60' } })
+        expect(r.status).toBe(0)
+        friendly(stripAnsi(r.stdout), 'sessions.json')
+      })
+    }
+
+    it('sessions.json warning is not truncated at the default 40-column pane', () => {
+      const root = tmpProject()
+      bad(root, 'sessions', '{}')
+      const r = runCli(['panel', 'sessions', '--once'], { root, env: { ...size, HECE_PANEL_WIDTH: '40' } })
+      const text = stripAnsi(r.stdout)
+      expect(text).toContain('⚠ .hece/state/sessions.json')
+      expect(text).toContain('is unreadable')
+      expect(text).toContain('Fix or delete it to continue.')
+      expect(text).not.toContain('…')
+    })
+
+    it('a bad agent.json is ignored when there is no flow', () => {
+      const root = tmpProject()
+      bad(root, 'agent', '{oops')
+      const r = runCli(['panel', 'flow', '--once'], { root, env: { ...size, HECE_PANEL_WIDTH: '60' } })
+      expect(stripAnsi(r.stdout)).not.toContain('agent.json')
+    })
+
+    for (const content of ['[]', '"x"', 'null', '{"idle":"yes"}', '{oops']) {
+      it(`agent.json = ${content} shows a friendly message on the flow panel`, () => {
+        const root = tmpProject()
+        seedFlow(root, emptyFlow())
+        bad(root, 'agent', content)
+        const r = runCli(['panel', 'flow', '--once'], { root, env: { ...size, HECE_PANEL_WIDTH: '60' } })
+        expect(r.status).toBe(0)
+        friendly(stripAnsi(r.stdout), 'agent.json')
+      })
+    }
+  })
+
   it('never prints more lines than the pane is tall', () => {
     const root = tmpProject()
     let s = setPlan(emptyFlow(), [{ title: 'Token model', files: [], kind: 'teaching' }], { guards: true }, 1)
