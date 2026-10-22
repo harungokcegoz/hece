@@ -29,11 +29,13 @@ export function relPath(root: string, p: string): string {
 }
 
 // Drops here-document bodies (and the <<WORD operator itself): what a heredoc says is data, not a command.
-// Quote-aware, so `echo "<<EOF"` is left alone. An unterminated heredoc swallows the rest of the text.
+// Quote- and arithmetic-aware: a quoted << or an arithmetic shift is not a heredoc.
+// An unterminated heredoc swallows the rest of the text.
 function stripHeredocs(command: string): string {
   const pending: Array<{ word: string; tabs: boolean }> = []
   let out = ''
   let quote = ''
+  let arithmeticDepth = 0
   let i = 0
   while (i < command.length) {
     const c = command[i]
@@ -51,6 +53,19 @@ function stripHeredocs(command: string): string {
     }
     if (c === '"' || c === "'") {
       quote = c
+      out += c
+      i++
+      continue
+    }
+    if (command.startsWith('$((', i)) {
+      arithmeticDepth += 2
+      out += '$(('
+      i += 3
+      continue
+    }
+    if (arithmeticDepth > 0) {
+      if (c === '(') arithmeticDepth++
+      else if (c === ')') arithmeticDepth--
       out += c
       i++
       continue
