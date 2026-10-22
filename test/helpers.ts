@@ -23,10 +23,11 @@ export function testEnv(root: string, extra: Record<string, string> = {}): Recor
   return { ...env, HECE_ROOT: root, XDG_CONFIG_HOME: path.join(root, '.config-test'), ...extra }
 }
 
-export function runCli(args: string[], opts: { root: string; stdin?: string; env?: Record<string, string> }) {
+export function runCli(args: string[], opts: { root: string; stdin?: string; env?: Record<string, string>; cwd?: string }) {
   return spawnSync(process.execPath, ['--import', 'tsx', CLI, ...args], {
     input: opts.stdin ?? '',
     encoding: 'utf8',
+    cwd: opts.cwd,
     env: testEnv(opts.root, opts.env),
   })
 }
