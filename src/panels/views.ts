@@ -1,4 +1,4 @@
-import { FlowState } from '../flow/types.js'
+import { FlowState, PHASES } from '../flow/types.js'
 import { renderFlow } from '../flow/render.js'
 import { SessionRecord } from '../hooks/handle.js'
 import { color } from './color.js'
@@ -50,4 +50,31 @@ export function sessionsPanelLines(sessions: SessionRecord[]): string[] {
   return [
     ...sessions.slice(-8).map((s) => `• ${s.source === 'startup' ? 'main' : s.source} ${s.sessionId.slice(0, 8)}`),
   ]
+}
+
+// Shape checks for state files that parsed as JSON but may still be the wrong thing.
+// Panels only read what they render, so these check just that much.
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+export function isFlowState(v: unknown): v is FlowState {
+  if (!isObject(v)) return false
+  if (typeof v.phase !== 'string' || !(PHASES as readonly string[]).includes(v.phase)) return false
+  if (!Array.isArray(v.decisions)) return false
+  if (v.currentSlice !== null && v.currentSlice !== undefined && typeof v.currentSlice !== 'number') return false
+  if (v.plan !== null && v.plan !== undefined) {
+    if (!isObject(v.plan) || !Array.isArray(v.plan.slices)) return false
+    const ok = v.plan.slices.every(
+      (sl) => isObject(sl) && typeof sl.n === 'number' && typeof sl.title === 'string' && typeof sl.status === 'string' && Array.isArray(sl.files),
+    )
+    if (!ok) return false
+  }
+  return true
+}
+
+export function isSessionList(v: unknown): v is SessionRecord[] {
+  return Array.isArray(v) && v.every((s) => isObject(s) && typeof s.sessionId === 'string' && typeof s.source === 'string')
+}
+
+export function isAgentState(v: unknown): v is { idle: boolean } {
+  return isObject(v) && typeof v.idle === 'boolean'
 }
