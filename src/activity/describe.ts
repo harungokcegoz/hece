@@ -501,8 +501,13 @@ function fileLabel(root: string, p: string): string {
   return isInside(root, p) ? relPath(root, p) : `${path.basename(p)} (outside the project)`
 }
 
-// a long or key-looking pattern could be a secret; don't echo it
-const safePattern = (t: string): boolean => t.length <= 40 && !/[A-Za-z0-9_-]{24,}/.test(t)
+// Both Grep and Glob hide credential-looking patterns, even when the value is short.
+const safePattern = (t: string): boolean =>
+  t.length <= 40
+  && !/(?:AKIA|ASIA)[A-Z0-9]{16}/i.test(t)
+  && !/(?:password|token|secret|key|auth)[\w.-]*["']?\s*[:=]/i.test(t)
+  // Long key/hex/base64-looking runs include base64 separators and padding.
+  && !/[A-Za-z0-9+/_=-]{24,}/.test(t)
 
 export function describeTool(tool: string, target: string, root: string): string | null {
   if (HIDDEN_TOOLS.has(tool)) return null

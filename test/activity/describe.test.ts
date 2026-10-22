@@ -195,6 +195,38 @@ describe('describeTool', () => {
   it('does not echo secret-looking glob patterns', () => {
     expect(describeTool('Glob', 'sk_live_51HxYzAbCdEfGhIjKlMnOp/**', root)).toBe('looking for files')
   })
+  describe.each([
+    ['Grep', 'searching the code'],
+    ['Glob', 'looking for files'],
+  ])('%s credential screening', (tool, fallback) => {
+    it.each([
+      'AKIAIOSFODNN7EXAMPLE',
+      'ASIAIOSFODNN7EXAMPLE',
+      'credentials/AKIAIOSFODNN7EXAMPLE/**',
+      'password=hunter2hunter2',
+      'PASSWORD = short',
+      'api_token=short',
+      'client-secret=short',
+      'api_key=short',
+      'auth=Bearer short',
+      'authorization=short',
+      '{"token":"short"}',
+      'Ab+/Cd+/Ef+/Gh+/Ij+/Kl+/Mn+/Op+/',
+      'Ab+/Cd+/Ef+/Gh+/Ij+/Kl==',
+      '0123456789abcdef0123456789abcdef',
+    ])('hides credential-looking pattern %s', (pattern) => {
+      expect(describeTool(tool, pattern, root)).toBe(fallback)
+    })
+  })
+  it.each([
+    ['Grep', 'authHandler', 'searching the code for "authHandler"'],
+    ['Grep', 'passwordPolicy', 'searching the code for "passwordPolicy"'],
+    ['Grep', 'tokenize', 'searching the code for "tokenize"'],
+    ['Glob', 'createUser', 'looking for files matching createUser'],
+    ['Glob', 'src/**/*.ts', 'looking for files matching src/**/*.ts'],
+  ])('keeps ordinary %s patterns visible: %s', (tool, pattern, text) => {
+    expect(describeTool(tool, pattern, root)).toBe(text)
+  })
   it('hides hece bookkeeping and housekeeping tools', () => {
     for (const t of ['mcp__plugin_hece_hece__flow_start_slice', 'mcp__hece__activity_note', 'Skill', 'TodoWrite', 'ToolSearch']) {
       expect(describeTool(t, '', root)).toBeNull()
