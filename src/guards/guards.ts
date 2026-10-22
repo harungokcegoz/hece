@@ -85,22 +85,32 @@ export function isRedoIntent(text: string): boolean {
 }
 
 // AskUserQuestion's result is { questions: [...], answers: { "<question>": string | string[] } }.
-// `questions` echoes every option label (including "Continue"), so only `answers` may be read.
-// Any other shape (such as a string the agent could imitate) yields no answers.
-function pickerAnswers(toolResponse: unknown): string[] {
+// `questions` echoes every option label (including "Continue"), so only `answers` may be read, and only
+// the answer to the approval question. Any other shape (such as a string the agent could imitate) yields none.
+const normalizeLabel = (v: unknown): string => (typeof v === 'string' ? v.trim().toLowerCase() : '')
+
+// The answer to the approval question: the one question whose first option is `Continue`. Other questions in
+// the same picker are ignored, and two such questions are ambiguous, so there is no approval answer.
+function approvalAnswers(toolResponse: unknown): string[] {
   if (toolResponse === null || typeof toolResponse !== 'object') return []
-  const answers = (toolResponse as { answers?: unknown }).answers
-  if (answers === null || typeof answers !== 'object') return []
-  return Object.values(answers)
-    .flatMap((a) => (Array.isArray(a) ? a : [a]))
-    .filter((v): v is string => typeof v === 'string')
-    .map((v) => v.trim().toLowerCase())
+  const { questions, answers } = toolResponse as { questions?: unknown; answers?: unknown }
+  if (!Array.isArray(questions) || answers === null || typeof answers !== 'object') return []
+  const approval = questions.filter((q) => {
+    const options = (q as { options?: unknown } | null)?.options
+    return Array.isArray(options) && normalizeLabel((options[0] as { label?: unknown } | undefined)?.label) === 'continue'
+  })
+  if (approval.length !== 1) return []
+  const text = (approval[0] as { question?: unknown }).question
+  if (typeof text !== 'string' || !Object.prototype.hasOwnProperty.call(answers, text)) return []
+  const answer = (answers as Record<string, unknown>)[text]
+  return (Array.isArray(answer) ? answer : [answer]).map(normalizeLabel)
 }
 
 export function pickerApproved(toolResponse: unknown): boolean {
-  return pickerAnswers(toolResponse).includes('continue')
+  return approvalAnswers(toolResponse).includes('continue')
 }
 
+// Redo follows the same rule as approval, so a check question or an unrelated question offering "Redo" cannot trigger it.
 export function pickerRedo(toolResponse: unknown): boolean {
-  return pickerAnswers(toolResponse).includes('redo')
+  return approvalAnswers(toolResponse).includes('redo')
 }

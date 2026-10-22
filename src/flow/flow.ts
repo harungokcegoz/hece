@@ -81,6 +81,7 @@ export function startSlice(s: FlowState, n: number, opts: { guards: boolean }, n
   if (sl.status === 'approved') throw new FlowError(`slice ${n} is already approved`)
   sl.status = 'working'
   delete sl.redoRequested
+  delete next.checkPending
   next.currentSlice = n
   next.phase = 'build'
   next.updatedAt = now
@@ -97,8 +98,28 @@ export function finishSlice(
   const sl = findSlice(next, n)
   if (sl.status !== 'working') throw new FlowError(`slice ${n} is not in progress (status: ${sl.status})`)
   sl.status = 'stopped'
+  delete next.checkPending
   sl.summary = info.summary
   sl.connectsTo = info.connectsTo
+  next.updatedAt = now
+  return next
+}
+
+// Called by the agent just before it asks a check question. The hook clears it on the user's next answer.
+export function markCheckPending(s: FlowState, now: number): FlowState {
+  if (!s.plan?.slices.some((x) => x.status === 'stopped')) {
+    throw new FlowError('hece: no slice is waiting for the user, so there is no check question to mark')
+  }
+  const next = clone(s)
+  next.checkPending = true
+  next.updatedAt = now
+  return next
+}
+
+// Human-only, like approve(). Called by hooks when the user answers while a check question is open.
+export function clearCheckPending(s: FlowState, now: number): FlowState {
+  const next = clone(s)
+  delete next.checkPending
   next.updatedAt = now
   return next
 }

@@ -12,8 +12,8 @@ Respect `slice_stop.depth`: `line` = 1 line, `short` ≤ 5 lines, `detailed` ≤
 3. What's new, by real name: `functionName()` in `path/file.ts`, and what calls it.
 4. One *why* for the key decision.
 5. If your review or a worker fixed something, say so in one line.
-6. A check question, if hece:check-question says one applies. Wait for the answer before step 7.
-7. Offer the choices with the native picker (AskUserQuestion): `Continue`, `Ask about this`, `Side chat`, `Redo`. The first option's label must be exactly `Continue`, because that's how hece records the approval. The picker's answer is recorded by hece. Continue only after you receive `hece: the user approved slice N`. If the user picked Continue but no such line arrives, ask them to type `continue`.
+6. A check question, if hece:check-question says one applies. Call `flow_check_question` right before you ask it, so hece reads the user's next answer as the answer to the question and not as approval. Wait for the answer before step 7.
+7. Offer the choices with the native picker (AskUserQuestion): `Continue`, `Ask about this`, `Side chat`, `Redo`. The first option's label must be exactly `Continue`, because that's how hece records the approval. Put it in a picker of its own, or make sure no other question in the picker has `Continue` as its first option: hece approves only from the one question whose first option is `Continue`. The picker's answer is recorded by hece. Continue only after you receive `hece: the user approved slice N`. If the user picked Continue but no such line arrives, ask them to type `continue`.
 
 Then stop. Make no edits until hece reports approval.
 

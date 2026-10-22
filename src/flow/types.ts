@@ -40,6 +40,8 @@ export interface FlowState {
   phase: Phase
   /** Absent in older state; only this session may approve or request a redo. */
   mainSessionId?: string | null
+  /** Set by flow_check_question; the user's next answer in the main session is the check answer, never an approval. */
+  checkPending?: boolean
   decisions: Decision[]
   plan: Plan | null
   currentSlice: number | null
