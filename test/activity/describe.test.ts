@@ -250,7 +250,7 @@ describe('describeTool', () => {
 
 describe('describeEvent', () => {
   it('turns notes, tools, flow steps, approvals and problems into lines', () => {
-    expect(describeEvent({ at: 1, event: 'note', text: 'saving only a hash', slice: 1 }, ctx)).toEqual({ kind: 'note', text: 'Now: saving only a hash', slice: 1 })
+    expect(describeEvent({ at: 1, event: 'note', text: 'saving only a hash', slice: 1 }, ctx)).toEqual({ kind: 'note', text: 'saving only a hash', slice: 1 })
     expect(describeEvent({ at: 1, event: 'tool', tool: 'Bash', target: 'npm test', slice: 1 }, ctx)).toEqual({ kind: 'action', text: 'running the tests', slice: 1 })
     expect(describeEvent({ at: 1, event: 'flow', tool: 'flow_start_slice', n: 1 }, ctx)).toEqual({ kind: 'milestone', text: 'started slice 1: Token model', slice: 1 })
     expect(describeEvent({ at: 1, event: 'flow', tool: 'flow_finish_slice', n: 1 }, ctx)).toEqual({ kind: 'milestone', text: 'slice 1 done, waiting for you', slice: 1 })

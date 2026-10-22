@@ -22,6 +22,9 @@ export function buildActivity(events: HeceEvent[], ctx: DescribeContext, max: nu
     else lines.push({ ...l, count: 1 })
   }
 
+  // Only the newest note is current intent; older ones are history.
+  const newestNote = lines.map((l) => l.kind).lastIndexOf('note')
+
   const header = (n: number): Tagged => {
     const title = ctx.flow.plan?.slices.find((s) => s.n === n)?.title ?? ''
     return { kind: 'header', text: `▸ Slice ${n}${title ? ` · ${title}` : ''}`, slice: n }
@@ -29,12 +32,12 @@ export function buildActivity(events: HeceEvent[], ctx: DescribeContext, max: nu
 
   const out: Tagged[] = []
   let group: number | null = null
-  for (const l of lines) {
+  for (const [i, l] of lines.entries()) {
     if (l.slice !== null && l.slice !== group) out.push(header(l.slice))
     group = l.slice
     const indent = l.slice === null ? '' : '  '
     const count = l.count > 1 ? ` (×${l.count})` : ''
-    out.push({ kind: l.kind, text: `${indent}${MARK[l.kind]}${l.text}${count}`, slice: l.slice })
+    out.push({ kind: l.kind, text: `${indent}${MARK[l.kind]}${l.kind === 'note' ? (i === newestNote ? 'Now: ' : 'Claude: ') : ''}${l.text}${count}`, slice: l.slice })
   }
 
   if (out.length <= max) return out.map(({ kind, text }) => ({ kind, text }))
