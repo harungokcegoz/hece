@@ -100,17 +100,54 @@ function stripHeredocs(command: string): string {
   return out
 }
 
+// Skip comparison/arithmetic syntax before looking for shell operators inside it.
+// Recognize [[ after control/negation keywords, while leaving ordinary arguments alone.
+function expressionEnd(text: string, start: number, prefix: string): number {
+  const test = text.startsWith('[[', start)
+    && /^\s*(?:(?:!|if|elif|while|until|then|else|do)\s+)*$/.test(prefix)
+    && /\s/.test(text[start + 2] ?? '')
+  const expansion = text.startsWith('$((', start)
+  if (!test && !expansion && !text.startsWith('((', start)) return start
+  let depth = 2
+  let quote = ''
+  let wordStart = true
+  for (let i = start + (expansion ? 3 : 2); i < text.length; i++) {
+    const c = text[i]
+    if (quote) {
+      if (c === '\\' && quote === '"') i++
+      else if (c === quote) quote = ''
+    } else if (c === '\\') {
+      wordStart = false
+      i++
+    } else if (c === '"' || c === "'") {
+      wordStart = false
+      quote = c
+    } else if (test) {
+      // ]] must be its own shell token, not part of an unquoted comparison word.
+      if (wordStart && text.startsWith(']]', i) && (i + 2 === text.length || /[\s;&|<>()]/.test(text[i + 2]))) return i + 2
+      wordStart = /[\s;&|<>()]/.test(c)
+    } else {
+      if (c === '(') depth++
+      else if (c === ')' && --depth === 0) return i + 1
+    }
+  }
+  return text.length
+}
+
 interface Redirects {
-  /** the segment without its > and >> redirections */
+  /** the segment without its >, >> and >| redirections */
   rest: string
   /** raw (unquoted) file targets; /dev/null and fd copies like 2>&1 are left out */
   targets: string[]
+  /** an explicit >| overwrite keeps an informative program description alongside the write */
+  clobber: boolean
 }
 
-// Finds unquoted > and >> redirections. `2>&1` and `>/dev/null` do not count as writing a file.
+// Finds unquoted >, >> and >| redirections. `2>&1` and `>/dev/null` do not count as writing a file.
 function extractRedirects(segment: string): Redirects {
   const targets: string[] = []
   let rest = ''
+  let clobber = false
   let quote = ''
   let i = 0
   while (i < segment.length) {
@@ -133,12 +170,21 @@ function extractRedirects(segment: string): Redirects {
       i++
       continue
     }
+    const end = expressionEnd(segment, i, rest)
+    if (end > i) {
+      rest += segment.slice(i, end)
+      i = end
+      continue
+    }
     if (c === '>' && segment[i + 1] !== '(') {
       // also eat an fd number in front (2>file) and a leading & (&>file)
       rest = rest.replace(/(?:^|(?<=\s))(?:\d+|&)$/, '')
       i++
       if (segment[i] === '>') i++
-      if (segment[i] === '|') i++
+      if (segment[i] === '|') {
+        clobber = true
+        i++
+      }
       const dup = segment[i] === '&' && /[\d-]/.test(segment[i + 1] ?? '')
       if (segment[i] === '&') i++
       while (i < segment.length && /[ \t]/.test(segment[i])) i++
@@ -162,10 +208,10 @@ function extractRedirects(segment: string): Redirects {
     rest += c
     i++
   }
-  return { rest, targets }
+  return { rest, targets, clobber }
 }
 
-// Split a shell line into segments on && || ; | and newlines, ignoring separators inside quotes.
+// Split on shell separators outside quotes and comparison/arithmetic expressions; >| is a redirect.
 function splitSegments(command: string): string[] {
   const out: string[] = []
   let cur = ''
@@ -187,8 +233,17 @@ function splitSegments(command: string): string[] {
       cur += c
       continue
     }
+    const end = expressionEnd(command, i, cur)
+    if (end > i) {
+      cur += command.slice(i, end)
+      i = end - 1
+      continue
+    }
     const two = command.slice(i, i + 2)
-    if (two === '&&' || two === '||') {
+    if (two === '>|') {
+      cur += two
+      i++
+    } else if (two === '&&' || two === '||') {
       out.push(cur)
       cur = ''
       i++
@@ -351,14 +406,30 @@ function writeLabel(target: string, root?: string): string {
 }
 
 function describeSegment(segment: string, root?: string): string[] {
-  const { rest, targets } = extractRedirects(segment)
-  const prog = describeProgram(rest)
+  const { rest, targets, clobber } = extractRedirects(segment)
+  const prog = describeProgram(rest, root)
+  const descriptions = Array.isArray(prog) ? prog : prog ? [prog] : []
   const writes = [...new Set(targets.map((t) => writeLabel(t, root)))]
-  if (!writes.length) return prog ? [prog] : []
-  return prog && !VAGUE.has(prog) ? [prog, ...writes] : writes
+  if (!writes.length) return descriptions
+  return [...descriptions.filter((d) => !VAGUE.has(d) || (clobber && d === 'looking around the files')), ...writes]
 }
 
-function describeProgram(segment: string): string | null {
+function describeTee(args: string[], root?: string): string | string[] {
+  const files: string[] = []
+  let options = true
+  for (const arg of args) {
+    if (options && arg === '--') options = false
+    else if (options && arg.startsWith('-')) {
+      // Unknown flags may consume a value: don't mistake that value for a file.
+      if (!/^-[ai]+$/.test(arg) && arg !== '--append' && arg !== '--ignore-interrupts') return 'running a command'
+    } else if (arg && !/^\/dev\/(null|stdout|stderr)$/.test(arg)) files.push(arg)
+  }
+  // Tokenization cannot reliably separate unquoted substitution contents from later filenames.
+  if (files.some((f) => f.includes('$(') || f.includes('`'))) return 'writing a file'
+  return files.length ? files.map((f) => writeLabel(f, root)) : 'running a command'
+}
+
+function describeProgram(segment: string, root?: string): string | string[] | null {
   const tokens = tokenize(segment)
   // drop leading VAR=value and wrapper programs (with their own flags)
   while (tokens.length) {
@@ -375,6 +446,7 @@ function describeProgram(segment: string): string | null {
 
   if (SHELLS.has(prog)) return 'running a shell script'
   if (prog === 'git') return describeGit(args)
+  if (prog === 'tee') return describeTee(args, root)
   const BUN_PM_SUBS = ['i', 'install', 'add', 'ci', 'test', 'run', 'publish']
   const pm = parsePm(args)
   if (PKG_MANAGERS.has(prog) && (prog !== 'bun' || (pm.clean && pm.sub !== undefined && BUN_PM_SUBS.includes(pm.sub)))) {
