@@ -24,22 +24,25 @@ const TAIL_BYTES = 256 * 1024
 const RESTORE = '\x1b[?25h\x1b[?1049l'
 
 // Only the end of a long log matters to the activity view. Reads the last
-// TAIL_BYTES, drops a partial first line, and skips unparsable lines.
+// TAIL_BYTES, drops the first line unless the window starts right after a newline, and skips unparsable lines.
 export function readEventsTail(file: string, maxBytes = TAIL_BYTES): HeceEvent[] {
   let fd: number | undefined
   try {
     fd = fs.openSync(file, 'r')
     const size = fs.fstatSync(fd).size
     const start = Math.max(0, size - maxBytes)
-    const buf = Buffer.alloc(size - start)
+    // one extra byte before the window tells whether it starts on a line boundary
+    const from = Math.max(0, start - 1)
+    const buf = Buffer.alloc(size - from)
     let got = 0
     while (got < buf.length) {
-      const n = fs.readSync(fd, buf, got, buf.length - got, start + got)
+      const n = fs.readSync(fd, buf, got, buf.length - got, from + got)
       if (n === 0) break
       got += n
     }
-    let text = buf.subarray(0, got).toString('utf8')
-    if (start > 0) {
+    const lead = start - from
+    let text = buf.subarray(lead, got).toString('utf8')
+    if (start > 0 && buf[0] !== 0x0a) {
       const nl = text.indexOf('\n')
       text = nl < 0 ? '' : text.slice(nl + 1)
     }

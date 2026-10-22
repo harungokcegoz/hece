@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
+import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { tmpProject, seedFlow, runCli, testEnv, CLI } from '../helpers.js'
 import { statePaths } from '../../src/state/paths.js'
@@ -7,12 +8,49 @@ import { appendEvent } from '../../src/state/store.js'
 import { emptyFlow } from '../../src/flow/types.js'
 import { setPlan, startSlice, approve } from '../../src/flow/flow.js'
 import { stripAnsi } from '../../src/panels/color.js'
+import { readEventsTail } from '../../src/panels/main.js'
 
 const size = { HECE_PANEL_WIDTH: '40', HECE_PANEL_HEIGHT: '20' }
 const panel = (root: string, widget: string) => {
   const r = runCli(['panel', widget, '--once'], { root, env: size })
   return { ...r, text: stripAnsi(r.stdout) }
 }
+
+describe('readEventsTail', () => {
+  const lineOf = (at: number) => JSON.stringify({ at, event: 'note', text: 'x' }) + '\n'
+  const write = (text: string) => {
+    const file = path.join(tmpProject(), 'events.jsonl')
+    fs.writeFileSync(file, text)
+    return file
+  }
+
+  it('keeps the first line when the window starts exactly on a line boundary', () => {
+    const a = lineOf(1)
+    const b = lineOf(2)
+    const c = lineOf(3)
+    const file = write(a + b + c)
+    expect(readEventsTail(file, b.length + c.length).map((e) => e.at)).toEqual([2, 3])
+  })
+
+  it('still drops a first line that the window cuts in half', () => {
+    const a = lineOf(1)
+    const b = lineOf(2)
+    const c = lineOf(3)
+    const file = write(a + b + c)
+    expect(readEventsTail(file, b.length + c.length + 5).map((e) => e.at)).toEqual([2, 3])
+    expect(readEventsTail(file, c.length + 5).map((e) => e.at)).toEqual([3])
+  })
+
+  it('reads the whole file when it fits the window', () => {
+    const file = write(lineOf(1) + lineOf(2))
+    expect(readEventsTail(file, 10000).map((e) => e.at)).toEqual([1, 2])
+  })
+
+  it('returns nothing when the window holds no complete line', () => {
+    const file = write(lineOf(1) + lineOf(2))
+    expect(readEventsTail(file, 5)).toEqual([])
+  })
+})
 
 describe('hece panel --once', () => {
   it('flow panel shows the real flow', () => {
