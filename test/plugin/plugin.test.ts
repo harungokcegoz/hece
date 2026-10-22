@@ -20,8 +20,12 @@ describe('Claude Code plugin', () => {
   })
 
   it('registers the MCP server as `hece mcp`', () => {
-    expect(json('.mcp.json')).toEqual({
-      mcpServers: { hece: { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/dist/cli.js', 'mcp'] } },
+    expect(json('.claude-plugin/plugin.json').mcpServers).toEqual({
+      hece: { command: 'node', args: ['${CLAUDE_PLUGIN_ROOT}/dist/cli.js', 'mcp'] },
     })
+  })
+
+  it('has no root .mcp.json, which Claude Code also reads as a project config inside this repo', () => {
+    expect(fs.existsSync('.mcp.json')).toBe(false)
   })
 })

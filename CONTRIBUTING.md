@@ -74,7 +74,7 @@ src/activity   plain-language Activity lines from hece events
 src/panels     `hece panel`: Flow / Activity / Sessions renderers
 src/frame      `hece`: the tmux three-pane window
 skills/        markdown skills the agent follows
-.claude-plugin/, hooks/, .mcp.json   Claude Code plugin wiring
+.claude-plugin/, hooks/             Claude Code plugin wiring (the MCP server is in plugin.json)
 adapters/      other agents (planned)
 docs/superpowers/   design spec and implementation plans
 ```
