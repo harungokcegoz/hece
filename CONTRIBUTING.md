@@ -2,6 +2,13 @@
 
 Thanks for your interest! hece is early, so issues, ideas and pull requests all help.
 
+## Where to start
+
+- **Questions or half-formed ideas:** open a thread in [Discussions](https://github.com/harungokcegoz/hece/discussions).
+- **Bugs and concrete features:** [open an issue](https://github.com/harungokcegoz/hece/issues/new/choose) from one of the templates.
+- **First contribution:** look for [`good first issue`](https://github.com/harungokcegoz/hece/labels/good%20first%20issue) or [`help wanted`](https://github.com/harungokcegoz/hece/labels/help%20wanted). Adapters for other agents (`area: adapters`) are especially welcome.
+- **Bigger changes:** open an issue or discussion before writing code, so we can agree on the approach first. That's the hece way, after all.
+
 ## Development setup
 
 You need Node.js **22.12 or newer** for development (the test runner requires it). Using hece only needs Node 20+.
@@ -64,7 +71,8 @@ Check every captured file for personal data before committing it.
 ## Commits and pull requests
 
 - Use conventional commit messages (`feat:`, `fix:`, `docs:`, `test:`).
-- Run `npm test && npm run typecheck && npm run build` before opening a PR.
+- Pull requests are squash-merged, and the PR title becomes the commit on `main`, so give the PR a conventional title too.
+- Run `npm test && npm run typecheck && npm run build` before opening a PR. CI runs the same on Ubuntu and macOS with Node 22 and 24, and all four jobs must pass before merging.
 - Describe *why* the change is needed, not only what changed.
 
 By contributing, you agree that your contributions are licensed under the [MIT License](LICENSE).

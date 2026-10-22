@@ -1,5 +1,9 @@
 # hece
 
+[![CI](https://github.com/harungokcegoz/hece/actions/workflows/ci.yml/badge.svg)](https://github.com/harungokcegoz/hece/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Discussions](https://img.shields.io/github/discussions/harungokcegoz/hece)](https://github.com/harungokcegoz/hece/discussions)
+
 **Stay in the loop while AI agents build.**
 
 *hece* is Turkish for "syllable". *Hecelemek* means to spell a word out syllable by syllable. hece does that to features: it breaks them into pieces small enough to understand, discuss and defend.
@@ -136,6 +140,8 @@ The design is in [`docs/superpowers/specs/`](docs/superpowers/specs/) and the im
 hece sends nothing anywhere. Its state lives in `.hece/state/` inside your project, which hece adds to `.gitignore` automatically.
 
 ## Contributing
+
+Questions and ideas are welcome in [Discussions](https://github.com/harungokcegoz/hece/discussions); bugs and concrete features go in [issues](https://github.com/harungokcegoz/hece/issues/new/choose). Looking for a place to start? Try a [good first issue](https://github.com/harungokcegoz/hece/labels/good%20first%20issue).
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Please read the [Code of Conduct](CODE_OF_CONDUCT.md). Report security issues as described in [SECURITY.md](SECURITY.md).
 

@@ -1,0 +1,30 @@
+name: Agent adapter
+description: Propose or track support for another coding agent (Codex CLI, Gemini CLI, OpenCode, …).
+title: "adapter: "
+labels: [enhancement, "area: adapters", needs triage]
+body:
+  - type: input
+    id: agent
+    attributes:
+      label: Agent
+      placeholder: Codex CLI
+    validations:
+      required: true
+  - type: textarea
+    id: hooks
+    attributes:
+      label: Hooks and extension points
+      description: Does the agent have pre-tool-call hooks (for hard guards), MCP support, skills or custom instructions, subagents with a model per task? Links to its docs help a lot.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Anything you already know about how the flow would map onto it. See `adapters/` for the existing notes.
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this adapter

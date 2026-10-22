@@ -1,0 +1,71 @@
+name: Bug report
+description: Something in hece doesn't work as described.
+labels: [bug, needs triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this.
+
+        **Is it a way around a guard** (the agent edits while it should be blocked, or approves its own plan or slice)? Please don't file it here. Report it privately as described in [SECURITY.md](https://github.com/harungokcegoz/hece/blob/main/SECURITY.md).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The smallest sequence that shows the problem. A prompt you gave Claude, a hook payload or a sequence of MCP calls is ideal.
+      placeholder: |
+        1. `hece` in an empty project
+        2. Ask: "Let's build a CLI that prints a greeting, using hece."
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: "`hece status` output"
+      description: Run it from your project root. Remove anything private first.
+      render: text
+  - type: input
+    id: hece-version
+    attributes:
+      label: hece version or commit
+      placeholder: 0.1.0 or 3187f42
+    validations:
+      required: true
+  - type: input
+    id: claude-version
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS, Node.js and tmux versions
+      placeholder: macOS 15.4, Node 22.12, tmux 3.5a
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How were you running hece?
+      options:
+        - "`hece` (three-pane window)"
+        - "`hece --no-frame` or inside an existing tmux session"
+        - Claude Code plugin without the CLI
+        - The portable skill in another app
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Logs, screenshots, your preferences file, or what you already tried.

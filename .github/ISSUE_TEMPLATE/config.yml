@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and help
+    url: https://github.com/harungokcegoz/hece/discussions/categories/q-a
+    about: Ask how something works or how to set it up.
+  - name: Ideas and early proposals
+    url: https://github.com/harungokcegoz/hece/discussions/categories/ideas
+    about: Think out loud about where hece should go.
+  - name: Security issue or guard bypass
+    url: https://github.com/harungokcegoz/hece/security/advisories/new
+    about: Report privately, please don't open a public issue.

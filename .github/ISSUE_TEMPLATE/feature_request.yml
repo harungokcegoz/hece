@@ -1,0 +1,32 @@
+name: Feature request
+description: A concrete change you'd like in hece.
+labels: [enhancement, needs triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Still shaping the idea? Start a thread in [Ideas](https://github.com/harungokcegoz/hece/discussions/categories/ideas) first, and we can turn it into an issue together.
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What makes it hard to stay in the loop today? Describe the situation, not the solution yet.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you'd like
+      description: How should hece behave? Which step of the flow does it touch (discuss, plan, build, review, recap)?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+  - type: checkboxes
+    id: contribute
+    attributes:
+      label: Contributing
+      options:
+        - label: I'd like to work on this myself
