@@ -29,8 +29,7 @@
     "dist",
     "skills",
     "hooks",
-    ".claude-plugin",
-    ".mcp.json"
+    ".claude-plugin"
   ],
   "engines": {
     "node": ">=20"

@@ -2,5 +2,8 @@
   "name": "hece",
   "version": "0.1.0",
   "description": "Stay in the loop while AI agents build: discussion, small slices, a stop after each.",
-  "author": { "name": "Harun Gökçegöz" }
+  "author": { "name": "Harun Gökçegöz" },
+  "mcpServers": {
+    "hece": { "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/cli.js", "mcp"] }
+  }
 }
