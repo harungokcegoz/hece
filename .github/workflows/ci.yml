@@ -10,13 +10,18 @@ permissions:
 
 jobs:
   test:
-    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    name: ${{ matrix.label }} · Node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
         node: [22, 24]
+        include:
+          - os: ubuntu-latest
+            label: Linux
+          - os: macos-latest
+            label: macOS
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,3 +32,18 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+
+  # The one check the main ruleset requires, so the matrix can change
+  # without touching the ruleset. Runs even when a test job fails, because
+  # a skipped required check would count as passing.
+  all-tests-pass:
+    name: All tests pass
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - if: needs.test.result != 'success'
+        run: |
+          echo "Some test jobs did not pass: ${{ needs.test.result }}"
+          exit 1
+      - run: echo "All test jobs passed."
