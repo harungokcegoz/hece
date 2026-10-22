@@ -20,9 +20,9 @@ export function setPhase(s: FlowState, phase: Phase, opts: { guards: boolean }, 
       if (!s.plan.approved) throw new FlowError(PLAN_WAITING)
     }
   }
-  // a new discussion after idle or done starts a fresh flow; sessions live in their own file
+  // A new discussion clears the work, while the bound main session keeps ownership.
   if (phase === 'discuss' && (s.phase === 'idle' || s.phase === 'done')) {
-    return { ...emptyFlow(), phase: 'discuss', updatedAt: now }
+    return { ...emptyFlow(), mainSessionId: s.mainSessionId ?? null, phase: 'discuss', updatedAt: now }
   }
   const next = clone(s)
   next.phase = phase
@@ -44,8 +44,8 @@ export function setPlan(s: FlowState, input: SliceInput[], opts: { guards: boole
     const waiting = s.plan?.slices.find((x) => x.status === 'stopped')
     if (waiting) throw new FlowError(`${sliceWaiting(waiting.n)}; propose the plan change after they respond`)
   }
-  // a plan started after done is a new feature: nothing carries over from the finished flow
-  const base = s.phase === 'done' ? emptyFlow() : s
+  // A plan after done clears the finished work, but keeps the same main session.
+  const base = s.phase === 'done' ? { ...emptyFlow(), mainSessionId: s.mainSessionId ?? null } : s
   const next = clone(base)
   const prev = base.plan
   const slices: Slice[] = input.map((x, i) => {
