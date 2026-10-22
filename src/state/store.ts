@@ -27,8 +27,17 @@ export function readJson<T>(file: string, fallback: T): T {
 export function writeJsonAtomic(file: string, value: unknown): void {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
-  fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n')
-  fs.renameSync(tmp, file)
+  try {
+    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n')
+    fs.renameSync(tmp, file)
+  } catch (err) {
+    try {
+      fs.rmSync(tmp, { force: true })
+    } catch {
+      // the write error below is the one to report; a leftover temp file is harmless
+    }
+    throw err
+  }
 }
 
 export function appendEvent(file: string, ev: HeceEvent): void {
@@ -40,8 +49,9 @@ export function readEvents(file: string): HeceEvent[] {
   let text: string
   try {
     text = fs.readFileSync(file, 'utf8')
-  } catch {
-    return []
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw err
   }
   const out: HeceEvent[] = []
   for (const line of text.split('\n')) {

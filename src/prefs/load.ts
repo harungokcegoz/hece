@@ -16,8 +16,10 @@ function readYaml(file: string): { raw: unknown; error?: string } {
   let text: string
   try {
     text = fs.readFileSync(file, 'utf8')
-  } catch {
-    return { raw: undefined }
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code === 'ENOENT') return { raw: undefined }
+    return { raw: undefined, error: `${file}: could not read preferences (${code ?? 'unknown I/O error'})` }
   }
   try {
     return { raw: YAML.parse(text) }

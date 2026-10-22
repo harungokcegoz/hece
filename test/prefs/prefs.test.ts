@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -11,6 +11,8 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-root-'))
   home = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-home-'))
 })
+afterEach(() => vi.restoreAllMocks())
+
 const write = (file: string, text: string) => {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, text)
@@ -58,6 +60,23 @@ describe('validation', () => {
 })
 
 describe('loadPrefs', () => {
+  it.each([['global', 'EACCES'], ['project', 'EISDIR']] as const)('reports unreadable %s preferences (%s) while using the other file', (layer, code) => {
+    const files = prefsFiles({}, root, home)
+    write(files.global, 'preset: learning\n')
+    write(files.project, 'slice_stop: { depth: detailed }\n')
+    const failure = Object.assign(new Error('preferences unreadable'), { code })
+    const read = fs.readFileSync
+    const spy = vi.spyOn(fs, 'readFileSync')
+    if (layer === 'project') spy.mockImplementationOnce(read)
+    spy.mockImplementationOnce(() => { throw failure })
+    const { prefs, errors } = loadPrefs({}, root, home)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain(files[layer])
+    expect(errors[0]).toContain(code)
+    expect(prefs.preset).toBe(layer === 'global' ? 'involved' : 'learning')
+    expect(prefs.slice_stop.depth).toBe(layer === 'global' ? 'detailed' : 'short')
+  })
+
   it('reads global then project, project winning key by key', () => {
     const files = prefsFiles({}, root, home)
     write(files.global, 'guards: off\nslice_stop: { depth: detailed }\n')
