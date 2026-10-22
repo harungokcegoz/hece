@@ -601,7 +601,7 @@ export function describeEvent(ev: HeceEvent, ctx: DescribeContext): ActivityLine
   switch (ev.event) {
     case 'note': {
       const text = str(ev.text)
-      return text ? { kind: 'note', text: `Now: ${text}`, slice: num(ev.slice) } : null
+      return text ? { kind: 'note', text, slice: num(ev.slice) } : null
     }
     case 'tool': {
       const text = ev.tool === 'Bash' && str(ev.desc) ? str(ev.desc) : describeTool(str(ev.tool), str(ev.target), ctx.root)

@@ -53,6 +53,21 @@ describe('buildActivity', () => {
     expect(buildActivity(events, ctx, 50).map((l) => l.kind).slice(0, 4)).toEqual(['milestone', 'header', 'milestone', 'note'])
   })
 
+  it('says Now: only on the newest note', () => {
+    const three = [
+      e('note', { text: 'first idea', slice: 1 }),
+      e('tool', { tool: 'Read', target: '/p/src/db.ts', slice: 1 }),
+      e('note', { text: 'second idea', slice: 1 }),
+      e('note', { text: 'third idea', slice: 1 }),
+      e('tool', { tool: 'Edit', target: '/p/src/token.ts', slice: 1 }),
+    ]
+    expect(buildActivity(three, ctx, 50).filter((l) => l.kind === 'note').map((l) => l.text)).toEqual([
+      '  Claude: first idea',
+      '  Claude: second idea',
+      '  Now: third idea',
+    ])
+  })
+
   it('is empty when nothing readable happened', () => {
     expect(buildActivity([e('prompt'), e('turn_done')], ctx, 10)).toEqual([])
   })
