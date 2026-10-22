@@ -3,6 +3,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { frameName, alreadyOpenMessage, shellQuote, tmuxQuote, sidesFor, fitFrame, isHomeRoot, homeNote, frameDecision, openFrame, FrameDeps } from '../../src/frame/main.js'
 
 const tty = { stdinTTY: true, stdoutTTY: true, env: {}, tmuxAvailable: true, cliBuilt: true }
@@ -493,5 +494,96 @@ describe('frame-fit command', () => {
     expect(r.status).toBe(0)
     expect(r.stdout).toBe('')
     expect(r.stderr).toBe('')
+  })
+})
+
+
+describe('stable Node commands', () => {
+  function commands(command: 'runFrame' | 'runFrameFit', stable: boolean) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-node-'))
+    try {
+      const bin = path.join(root, 'stable bin')
+      fs.mkdirSync(bin)
+      const cellar = path.join(root, 'Cellar', 'node', 'old', 'bin')
+      fs.mkdirSync(cellar, { recursive: true })
+      const oldNode = path.join(cellar, 'node')
+      fs.writeFileSync(oldNode, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+      const stableNode = path.join(bin, 'node')
+      if (stable) fs.symlinkSync(oldNode, stableNode)
+      const blocked = path.join(root, 'not-executable')
+      fs.mkdirSync(blocked)
+      fs.writeFileSync(path.join(blocked, 'node'), '', { mode: 0o644 })
+      const directory = path.join(root, 'directory')
+      fs.mkdirSync(path.join(directory, 'node'), { recursive: true })
+      const searchPath = [blocked, directory, bin].join(path.delimiter)
+      const log = path.join(root, 'tmux.log')
+      const tmux = path.join(root, 'tmux')
+      fs.writeFileSync(tmux, `#!/bin/sh
+printf '%s\\n' "$*" >> "$HECE_TMUX_LOG"
+case "$*" in
+*has-session*) exit 1;;
+*display*) echo 200;;
+*list-panes*) echo '%0 middle';;
+*' -P '*) echo '%1';;
+esac
+`, { mode: 0o755 })
+      // Run the real entry points in isolation, with an obsolete process.execPath and a fake tmux.
+      // The CLI build check is satisfied without making these source tests depend on dist/.
+      const source = `
+        import fs from 'node:fs';
+        import { runFrame, runFrameFit } from ${JSON.stringify(pathToFileURL(path.resolve('src/frame/main.ts')).href)};
+        const exists = fs.existsSync;
+        fs.existsSync = p => p === ${JSON.stringify(path.resolve('dist/cli.js'))} || exists(p);
+        Object.defineProperty(process, 'execPath', { value: ${JSON.stringify(oldNode)} });
+        Object.defineProperty(process.stdin, 'isTTY', { value: true });
+        Object.defineProperty(process.stdout, 'isTTY', { value: true });
+        Object.defineProperty(process.stdout, 'columns', { value: 200 });
+        await ${command}(${command === 'runFrame' ? '[]' : ''});
+      `
+      const result = spawnSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', source], {
+        encoding: 'utf8',
+        env: { ...process.env, PATH: searchPath, TMUX: '', HECE_ROOT: root, HECE_TMUX_BIN: tmux, HECE_TMUX_LOG: log, TMPDIR: root, XDG_CONFIG_HOME: path.join(root, '.c') },
+      })
+      expect(result.status).toBe(0)
+      expect(result.stderr).toBe('')
+      return { calls: fs.readFileSync(log, 'utf8').trim().split('\n'), stableNode, oldNode }
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  }
+
+  it('keeps the PATH symlink in pane commands and both resize hooks instead of a Cellar path', () => {
+    const { calls, stableNode } = commands('runFrame', true)
+    const panes = calls.filter(c => c.includes('new-session') || c.includes('split-window'))
+    expect(panes).toHaveLength(3)
+    for (const pane of panes) {
+      expect(pane).toContain(stableNode)
+      expect(pane).not.toContain('/Cellar/')
+    }
+    const hooks = calls.filter(c => c.includes('client-attached') || c.includes('client-resized'))
+    expect(hooks).toHaveLength(2)
+    for (const hook of hooks) {
+      expect(hook).toContain(stableNode)
+      expect(hook).not.toContain('/Cellar/')
+    }
+  })
+
+  it('also keeps the stable path when frame-fit restores panels', () => {
+    const { calls, stableNode } = commands('runFrameFit', true)
+    const panes = calls.filter(c => c.includes('split-window'))
+    expect(panes).toHaveLength(2)
+    for (const pane of panes) {
+      expect(pane).toContain(stableNode)
+      expect(pane).not.toContain('/Cellar/')
+    }
+  })
+
+  it('falls back to process.execPath when PATH has no Node executable', () => {
+    for (const command of ['runFrame', 'runFrameFit'] as const) {
+      const { calls, oldNode } = commands(command, false)
+      const panes = calls.filter(c => c.includes('split-window'))
+      expect(panes).toHaveLength(2)
+      for (const pane of panes) expect(pane).toContain(oldNode)
+    }
   })
 })

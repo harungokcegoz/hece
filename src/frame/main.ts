@@ -45,6 +45,20 @@ export function frameName(root: string): string {
   return 'hece-' + crypto.createHash('sha1').update(real).digest('hex').slice(0, 12)
 }
 
+/** Keep the PATH entry (including symlinks), rather than Node's resolved, possibly versioned path. */
+function nodeForFrame(env: NodeJS.ProcessEnv): string {
+  for (const directory of env.PATH?.split(path.delimiter) ?? []) {
+    const candidate = path.resolve(directory, 'node')
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK)
+      if (fs.statSync(candidate).isFile()) return candidate
+    } catch {
+      // Missing or non-executable PATH entries are normal; try the next one.
+    }
+  }
+  return process.execPath
+}
+
 export function shellQuote(s: string): string {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`
 }
@@ -322,7 +336,7 @@ export async function runFrame(argv: string[]): Promise<void> {
   printHomeNote()
   const { prefs } = loadPrefs(env, root)
   process.exitCode = openFrame(
-    { root, claudeArgv: argv, layout: prefs.layout, node: process.execPath, cli, tmuxBin, columns: process.stdout.columns ?? 0 },
+    { root, claudeArgv: argv, layout: prefs.layout, node: nodeForFrame(env), cli, tmuxBin, columns: process.stdout.columns ?? 0 },
     {
       tmux: (args) => {
         const r = spawnSync(tmuxBin, args, { encoding: 'utf8' })
@@ -342,7 +356,7 @@ export async function runFrameFit(): Promise<void> {
     const root = resolveRoot(env)
     const { prefs } = loadPrefs(env, root)
     fitFrame(
-      { root, layout: prefs.layout, node: process.execPath, cli: path.join(pluginRoot(), 'dist', 'cli.js') },
+      { root, layout: prefs.layout, node: nodeForFrame(env), cli: path.join(pluginRoot(), 'dist', 'cli.js') },
       {
         tmux: (args) => {
           const r = spawnSync(tmuxBin, args, { encoding: 'utf8' })
