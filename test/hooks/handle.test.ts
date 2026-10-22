@@ -72,6 +72,24 @@ describe('handleHook', () => {
     expect(readJson(statePaths(root).agent, {})).toEqual({ idle: false, at: 100 })
   })
 
+  it('describes the whole Bash command, not the 120 characters kept as the target', () => {
+    seedFlow(root, emptyFlow())
+    const command = `${'echo building the thing && '.repeat(11)}git push --force origin main`
+    expect(command.length).toBeGreaterThan(300)
+    handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command } }, ctx())
+    const ev = readEvents(statePaths(root).events)[0]
+    expect(ev).toMatchObject({ event: 'tool', tool: 'Bash' })
+    expect(String(ev.target).length).toBeLessThanOrEqual(120)
+    expect(ev.desc).toContain('force-pushing to a remote')
+    expect(String(ev.desc)).not.toContain('echo')
+  })
+
+  it('keeps no desc for tools other than Bash', () => {
+    seedFlow(root, emptyFlow())
+    handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: 'a.ts' } }, ctx())
+    expect(readEvents(statePaths(root).events)[0]).not.toHaveProperty('desc')
+  })
+
   it('approves on a typed "continue" and tells the agent', () => {
     seedFlow(root, stopped)
     const r = handleHook({ hook_event_name: 'UserPromptSubmit', prompt: 'Continue.' }, ctx())

@@ -67,6 +67,49 @@ describe('describeCommand', () => {
   })
 })
 
+describe('describeCommand: long commands, heredocs and redirects', () => {
+  it('sees a force-push at the end of a very long command', () => {
+    const cmd = `${'echo building the thing && '.repeat(7)}git push --force origin main`
+    expect(cmd.length).toBeGreaterThan(160)
+    expect(describeCommand(cmd)).toContain('force-pushing to a remote')
+  })
+  it('reports a file written through a heredoc, not "looking around"', () => {
+    expect(describeCommand("cat > src/auth.ts <<'EOF'\nimport x\nEOF")).toBe('writing src/auth.ts')
+    expect(describeCommand('cat > src/auth.ts <<EOF\nimport x\nEOF')).toBe('writing src/auth.ts')
+    expect(describeCommand('cat <<-"EOF" > a.txt\n\tbody\n\tEOF\nnpm test')).toBe('writing a.txt, then running the tests')
+  })
+  it('ignores what a heredoc body says', () => {
+    const d = describeCommand("cat <<'EOF'\nrm -rf build && git push --force\nEOF")
+    expect(d).toBe('looking around the files')
+    expect(d).not.toContain('force')
+    expect(d).not.toContain('deleting')
+  })
+  it('keeps describing what comes after a heredoc', () => {
+    expect(describeCommand("cat <<'EOF'\nhi\nEOF\ngit push --force")).toBe('looking around the files, then force-pushing to a remote')
+  })
+  it('reports redirections to files, but not to /dev/null or fd copies', () => {
+    expect(describeCommand('echo x >> log.txt')).toBe('writing log.txt')
+    expect(describeCommand('echo hi > /dev/null')).toBe('running a command')
+    expect(describeCommand('echo hi 2>/dev/null')).toBe('running a command')
+    expect(describeCommand('npm test 2>&1 | tee out.txt')).toBe('running the tests, then running a command')
+    expect(describeCommand('npm test 2>&1')).toBe('running the tests')
+    expect(describeCommand('echo "a > b"')).toBe('running a command')
+  })
+  it('keeps the program description next to a redirect when it says more than "a command"', () => {
+    expect(describeCommand('git push --force > out.log')).toBe('force-pushing to a remote, then writing out.log')
+  })
+  it('labels the target with the project path when given a root, and never echoes expansions', () => {
+    expect(describeCommand('echo x > /p/src/a.ts', '/p')).toBe('writing src/a.ts')
+    expect(describeCommand('echo x > /q/a.ts', '/p')).toBe('writing a.ts (outside the project)')
+    expect(describeCommand('echo x > /q/a.ts')).toBe('writing a.ts')
+    expect(describeCommand('echo x > $(cat ~/.secret)')).toBe('writing a file')
+  })
+  it('reads a script after more interpreter value flags', () => {
+    expect(describeCommand('node --watch-path ./src app.js')).toBe('running app.js')
+    expect(describeCommand('node -I ./lib app.js')).toBe('running app.js')
+  })
+})
+
 describe('describeTool', () => {
   it('describes file tools with project-relative paths', () => {
     expect(describeTool('Edit', '/p/src/auth/reset.ts', root)).toBe('changing src/auth/reset.ts')
@@ -106,6 +149,12 @@ describe('describeEvent', () => {
   })
   it('never puts raw command text in a blocked line', () => {
     expect(describeEvent({ at: 1, event: 'blocked', tool: 'Bash', target: 'rm -rf x', reason: 'hece: nope' }, ctx))
+      .toEqual({ kind: 'alert', text: 'hece stopped a command (deleting files): nope', slice: null })
+  })
+  it('prefers the description the hook computed from the whole command', () => {
+    expect(describeEvent({ at: 1, event: 'tool', tool: 'Bash', target: 'echo hi', desc: 'force-pushing to a remote', slice: 1 }, ctx))
+      .toEqual({ kind: 'action', text: 'force-pushing to a remote', slice: 1 })
+    expect(describeEvent({ at: 1, event: 'blocked', tool: 'Bash', target: 'x', desc: 'deleting files', reason: 'hece: nope' }, ctx))
       .toEqual({ kind: 'alert', text: 'hece stopped a command (deleting files): nope', slice: null })
   })
   it('marks blocked edits outside the project', () => {

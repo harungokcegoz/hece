@@ -28,6 +28,128 @@ export function relPath(root: string, p: string): string {
   return rel && !rel.startsWith('..') && !path.isAbsolute(rel) ? rel : path.basename(p)
 }
 
+// Drops here-document bodies (and the <<WORD operator itself): what a heredoc says is data, not a command.
+// Quote-aware, so `echo "<<EOF"` is left alone. An unterminated heredoc swallows the rest of the text.
+function stripHeredocs(command: string): string {
+  const pending: Array<{ word: string; tabs: boolean }> = []
+  let out = ''
+  let quote = ''
+  let i = 0
+  while (i < command.length) {
+    const c = command[i]
+    if (quote) {
+      out += c
+      if (c === '\\' && quote === '"' && i + 1 < command.length) out += command[++i]
+      else if (c === quote) quote = ''
+      i++
+      continue
+    }
+    if (c === '\\' && i + 1 < command.length) {
+      out += c + command[++i]
+      i++
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      out += c
+      i++
+      continue
+    }
+    if (c === '<' && command[i + 1] === '<' && command[i + 2] !== '<' && command[i - 1] !== '<') {
+      const m = /^<<(-?)[ \t]*(?:'([^'\n]*)'|"([^"\n]*)"|\\?([A-Za-z_][^\s;&|<>()]*))/.exec(command.slice(i))
+      if (m) {
+        pending.push({ word: m[2] ?? m[3] ?? m[4] ?? '', tabs: m[1] === '-' })
+        i += m[0].length
+        continue
+      }
+    }
+    if (c === '\n' && pending.length) {
+      out += c
+      i++
+      for (const h of pending) {
+        // skip body lines up to and including the one that is exactly the delimiter
+        while (i < command.length) {
+          let end = command.indexOf('\n', i)
+          if (end === -1) end = command.length
+          const line = command.slice(i, end)
+          i = Math.min(end + 1, command.length)
+          if ((h.tabs ? line.replace(/^\t+/, '') : line) === h.word) break
+        }
+      }
+      pending.length = 0
+      continue
+    }
+    out += c
+    i++
+  }
+  return out
+}
+
+interface Redirects {
+  /** the segment without its > and >> redirections */
+  rest: string
+  /** raw (unquoted) file targets; /dev/null and fd copies like 2>&1 are left out */
+  targets: string[]
+}
+
+// Finds unquoted > and >> redirections. `2>&1` and `>/dev/null` do not count as writing a file.
+function extractRedirects(segment: string): Redirects {
+  const targets: string[] = []
+  let rest = ''
+  let quote = ''
+  let i = 0
+  while (i < segment.length) {
+    const c = segment[i]
+    if (quote) {
+      rest += c
+      if (c === '\\' && quote === '"' && i + 1 < segment.length) rest += segment[++i]
+      else if (c === quote) quote = ''
+      i++
+      continue
+    }
+    if (c === '\\' && i + 1 < segment.length) {
+      rest += c + segment[++i]
+      i++
+      continue
+    }
+    if (c === '"' || c === "'") {
+      quote = c
+      rest += c
+      i++
+      continue
+    }
+    if (c === '>' && segment[i + 1] !== '(') {
+      // also eat an fd number in front (2>file) and a leading & (&>file)
+      rest = rest.replace(/(?:^|(?<=\s))(?:\d+|&)$/, '')
+      i++
+      if (segment[i] === '>') i++
+      if (segment[i] === '|') i++
+      const dup = segment[i] === '&' && /[\d-]/.test(segment[i + 1] ?? '')
+      if (segment[i] === '&') i++
+      while (i < segment.length && /[ \t]/.test(segment[i])) i++
+      let word = ''
+      let wq = ''
+      for (; i < segment.length; i++) {
+        const d = segment[i]
+        if (wq) {
+          if (d === wq) wq = ''
+          else if (d === '\\' && wq === '"' && i + 1 < segment.length) word += segment[++i]
+          else word += d
+        } else if (d === '"' || d === "'") wq = d
+        else if (d === '\\' && i + 1 < segment.length) word += segment[++i]
+        else if (/[\s;|&<>()]/.test(d)) break
+        else word += d
+      }
+      if (!dup && word && !/^\/dev\/(null|stdout|stderr)$/.test(word)) targets.push(word)
+      rest += ' '
+      continue
+    }
+    rest += c
+    i++
+  }
+  return { rest, targets }
+}
+
 // Split a shell line into segments on && || ; | and newlines, ignoring separators inside quotes.
 function splitSegments(command: string): string[] {
   const out: string[] = []
@@ -104,7 +226,7 @@ const INTERPRETERS = new Set(['node', 'python', 'python3', 'ruby', 'deno', 'bun'
 const SHELLS = new Set(['sh', 'bash', 'zsh'])
 const INLINE_FLAGS = new Set(['-e', '-c', '-p', '-pe', '--eval', '--print'])
 // interpreter flags whose next argument is a value, not the script
-const VALUE_FLAGS = new Set(['-r', '--require', '--import', '--loader', '--env-file', '-m'])
+const VALUE_FLAGS = new Set(['-r', '--require', '--import', '--loader', '--env-file', '-m', '-I', '--watch-path', '-W'])
 
 const nonFlags = (args: string[]): string[] => args.filter((a) => !a.startsWith('-'))
 
@@ -202,7 +324,26 @@ function describeInterpreter(args: string[]): string {
   return 'running a command'
 }
 
-function describeSegment(segment: string): string | null {
+// what a program does when that says little, a write to a file says more
+const VAGUE = new Set(['running a command', 'looking around the files'])
+
+function writeLabel(target: string, root?: string): string {
+  // an expansion could be anything; never echo it
+  if (/[$`*?{}~]/.test(target)) return 'writing a file'
+  if (root) return `writing ${fileLabel(root, target)}`
+  const rel = path.normalize(target)
+  return `writing ${path.isAbsolute(rel) || rel.startsWith('..') ? path.basename(target) : rel}`
+}
+
+function describeSegment(segment: string, root?: string): string[] {
+  const { rest, targets } = extractRedirects(segment)
+  const prog = describeProgram(rest)
+  const writes = [...new Set(targets.map((t) => writeLabel(t, root)))]
+  if (!writes.length) return prog ? [prog] : []
+  return prog && !VAGUE.has(prog) ? [prog, ...writes] : writes
+}
+
+function describeProgram(segment: string): string | null {
   const tokens = tokenize(segment)
   // drop leading VAR=value and wrapper programs (with their own flags)
   while (tokens.length) {
@@ -250,11 +391,11 @@ function describeSegment(segment: string): string | null {
 }
 
 // Describes every program in the line, in order, by program position only. Never echoes command text.
-export function describeCommand(command: string): string {
+// Heredoc bodies are skipped; `root` only decides how a redirect target is labelled.
+export function describeCommand(command: string, root?: string): string {
   const parts: string[] = []
-  for (const seg of splitSegments(command)) {
-    const d = describeSegment(seg)
-    if (d && !parts.includes(d)) parts.push(d)
+  for (const seg of splitSegments(stripHeredocs(command))) {
+    for (const d of describeSegment(seg, root)) if (!parts.includes(d)) parts.push(d)
   }
   if (!parts.length) return 'running a command'
   const text = parts.slice(0, 3).join(', then ')
@@ -298,7 +439,7 @@ export function describeTool(tool: string, target: string, root: string): string
     case 'Glob':
       return target && safePattern(target) ? `looking for files matching ${target}` : 'looking for files'
     case 'Bash':
-      return describeCommand(target)
+      return describeCommand(target, root)
     case 'Task':
     case 'Agent':
       return 'handing work to a helper agent'
@@ -371,7 +512,7 @@ export function describeEvent(ev: HeceEvent, ctx: DescribeContext): ActivityLine
       return text ? { kind: 'note', text: `Now: ${text}`, slice: num(ev.slice) } : null
     }
     case 'tool': {
-      const text = describeTool(str(ev.tool), str(ev.target), ctx.root)
+      const text = ev.tool === 'Bash' && str(ev.desc) ? str(ev.desc) : describeTool(str(ev.tool), str(ev.target), ctx.root)
       return text ? { kind: 'action', text, slice: num(ev.slice) } : null
     }
     case 'blocked': {
@@ -379,7 +520,7 @@ export function describeEvent(ev: HeceEvent, ctx: DescribeContext): ActivityLine
       const target = str(ev.target)
       const reason = str(ev.reason).replace(/^hece:\s*/, '')
       let head: string
-      if (tool === 'Bash') head = `hece stopped a command (${describeCommand(target)})`
+      if (tool === 'Bash') head = `hece stopped a command (${str(ev.desc) || describeCommand(target, ctx.root)})`
       else if (FILE_TOOLS.has(tool)) head = `hece stopped an edit to ${fileLabel(ctx.root, target)}`
       else head = `hece stopped a tool call (${describeTool(tool, target, ctx.root) ?? tool})`
       return { kind: 'alert', text: withReason(head, reason), slice: null }
