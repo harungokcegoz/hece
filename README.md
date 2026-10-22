@@ -14,11 +14,16 @@
 
 ## Why
 
-AI coding agents got fast and reliable enough that many of us moved from *building with them* to *watching them build*. Features ship and tests pass. Afterwards you can't answer *how did you connect A to B?*, *what is the flow?* or *why this approach?*
+AI coding agents keep getting better, and they'll keep getting better. They're built and measured on one thing: **finishing the task**. Every improvement makes them more autonomous. They ask fewer questions, stop less, and hand you bigger finished chunks. That's great for output. For the person who has to own the code, it's a slow problem.
 
-The cause is size and pace, not the agent's quality. Plans and explanations arrive in chunks too big to digest, so approval becomes trust instead of understanding. Over the years that turns into skill atrophy: you can describe what you want, but you can't build, debug or defend it.
+Many of us have moved from *building with* agents to *watching them build*. Features ship and tests pass. Afterwards you can't answer *how did you connect A to B?*, *what is the flow?* or *why this approach?* Plans and explanations arrive in chunks too big to digest, so approval becomes trust instead of understanding. Over the years that turns into skill atrophy: you can describe what you want, but you can't build, debug or defend it.
 
-hece keeps you in the loop without giving up the agent.
+The agent isn't the problem. It's doing exactly what it was made for. Nothing in it is designed to keep *you* involved. As agents get more capable, the builders who want to stay real builders need the opposite of more autonomy: **more involvement**. That means:
+- discussing decisions instead of receiving them;
+- seeing each step instead of the final diff;
+- understanding the code well enough to defend it.
+
+hece puts you back in the loop without giving up the agent. It changes the pace and the size of what you hand over, not the model.
 
 ## What it does
 
