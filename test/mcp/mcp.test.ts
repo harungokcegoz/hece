@@ -46,6 +46,23 @@ describe('hece mcp', () => {
     expect(names.some((n) => n.includes('approve'))).toBe(false)
   })
 
+  it.each([
+    ['without state/', 'notes/\n', 'notes/\nstate/\n'],
+    ['without a trailing newline', 'notes/', 'notes/\nstate/\n'],
+    ['empty', '', 'state/\n'],
+    ['with state/ already', 'notes/\nstate/\n', 'notes/\nstate/\n'],
+    ['with /state already', '/state\nnotes/\n', '/state\nnotes/\n'],
+    ['with state/ only in a comment', '# state/\n', '# state/\nstate/\n'],
+  ])('keeps state/ ignored when .hece/.gitignore exists %s', async (_name, before, after) => {
+    const root = tmpProject()
+    fs.mkdirSync(path.join(root, '.hece'), { recursive: true })
+    const file = path.join(root, '.hece', '.gitignore')
+    fs.writeFileSync(file, before)
+    const c = await connect(root)
+    expect((await call(c, 'flow_set_phase', { phase: 'discuss' })).isError).toBe(false)
+    expect(fs.readFileSync(file, 'utf8')).toBe(after)
+  })
+
   it('runs discuss → plan → slices, with guards enforced across MCP and hooks', async () => {
     const root = tmpProject()
     const c = await connect(root)
