@@ -14,34 +14,47 @@ export function flowPanelLines(flow: FlowState | null, opts: { guards: boolean; 
   return [...lines.slice(0, -1), '', ...status, lines[lines.length - 1]]
 }
 
-// Fit to a short pane without losing what matters: the current step (a waiting
-// step first) and the Claude/guards footer. Other rows fill in from the top.
-export function fitFlowLines(lines: string[], width: number, height: number): string[] {
+// Pick which rows survive in a short pane: the current step (a waiting slice first,
+// then the working slice, then the phase) and the Claude/guards footer. Other rows
+// fill in from the top.
+function selectFlowLines(lines: string[], height: number): string[] {
   const h = Math.max(0, height)
-  if (lines.length <= h) return lines.map((l) => fitLine(l, width))
+  if (lines.length <= h) return lines
   const isFooter = (l: string) => l.startsWith('Claude:') || l.startsWith('guards:')
   let footerStart = lines.length
   while (footerStart > 0 && isFooter(lines[footerStart - 1])) footerStart--
-  const marked = (l: string) => /^[▸■]/.test(l.trimStart())
-  let current = lines.findIndex((l, i) => i < footerStart && (l.trimStart().startsWith('■') || l.includes('← waiting for you')))
-  if (current < 0) current = lines.findIndex((l, i) => i < footerStart && marked(l))
+  const body = (l: string, i: number) => i < footerStart && l.length > 0
+  const isSlice = (l: string) => /^\s+\S/.test(l)
+  let current = lines.findIndex((l, i) => body(l, i) && (l.trimStart().startsWith('■') || l.includes('← waiting for you')))
+  if (current < 0) current = lines.findIndex((l, i) => body(l, i) && isSlice(l) && l.trimStart().startsWith('▸'))
+  if (current < 0) current = lines.findIndex((l, i) => body(l, i) && /^[▸■]/.test(l.trimStart()))
   const priority: number[] = []
   if (current >= 0) priority.push(current)
   for (let i = footerStart; i < lines.length; i++) priority.push(i)
   const keep = new Set(priority.slice(0, h))
   for (let i = 0; i < lines.length && keep.size < h; i++) keep.add(i)
-  return lines.filter((_, i) => keep.has(i)).map((l) => fitLine(l, width))
+  return lines.filter((_, i) => keep.has(i))
 }
 
-export function colorFlowLine(line: string): string {
-  const t = line.trimStart()
-  // a plan waiting for approval is as urgent as a waiting slice (the ' — ' suffix survives a cut line)
+export function fitFlowLines(lines: string[], width: number, height: number): string[] {
+  return selectFlowLines(lines, height).map((l) => fitLine(l, width))
+}
+
+// Colour follows what a row means, judged on the full text: a cut line keeps its colour
+// at any width. Painting happens after fitting because fitLine strips ANSI.
+export function paintFlowLines(lines: string[], width: number, height: number): string[] {
+  return selectFlowLines(lines, height).map((l) => colorFlowLine(fitLine(l, width), l))
+}
+
+export function colorFlowLine(line: string, source = line): string {
+  const t = source.trimStart()
+  // a plan waiting for approval is as urgent as a waiting slice
   const planWaits = t.startsWith('▸ Plan') && t.includes(' — ')
-  if (line.includes('← waiting for you') || t.startsWith('■') || line.startsWith('Claude: wait') || planWaits) return color.boldRed(line)
+  if (source.includes('← waiting for you') || t.startsWith('■') || source.startsWith('Claude: wait') || planWaits) return color.boldRed(line)
   if (t.startsWith('▸')) return color.boldYellow(line)
   if (t.startsWith('✓')) return color.green(line)
-  if (line.startsWith('hece')) return color.bold(line)
-  if (line.startsWith('guards:') || line.startsWith('Claude:')) return color.dim(line)
+  if (source.startsWith('hece')) return color.bold(line)
+  if (source.startsWith('guards:') || source.startsWith('Claude:')) return color.dim(line)
   return line
 }
 

@@ -8,7 +8,7 @@ import { appendEvent } from '../../src/state/store.js'
 import { emptyFlow } from '../../src/flow/types.js'
 import { setPlan, startSlice, approve } from '../../src/flow/flow.js'
 import { stripAnsi } from '../../src/panels/color.js'
-import { readEventsTail } from '../../src/panels/main.js'
+import { readEventsTail, frameText } from '../../src/panels/main.js'
 
 const size = { HECE_PANEL_WIDTH: '40', HECE_PANEL_HEIGHT: '20' }
 const panel = (root: string, widget: string) => {
@@ -49,6 +49,18 @@ describe('readEventsTail', () => {
   it('returns nothing when the window holds no complete line', () => {
     const file = write(lineOf(1) + lineOf(2))
     expect(readEventsTail(file, 5)).toEqual([])
+  })
+})
+
+describe('frameText', () => {
+  it('never erases to the end of a line after drawing it, so the last column survives', () => {
+    const text = frameText(['abcd', 'ef'], 5)
+    expect(text).not.toContain('\x1b[K')
+    expect(text).toBe('\x1b[2Kabcd\r\n\x1b[2Kef\r\n\x1b[J')
+  })
+  it('does not erase from the cursor after a full-width last row, nor scroll a full pane', () => {
+    expect(frameText(['abcd', 'efgh'], 2)).toBe('\x1b[2Kabcd\r\n\x1b[2Kefgh')
+    expect(frameText(['abcd'], 2)).not.toMatch(/efgh|abcd\x1b\[J/)
   })
 })
 
