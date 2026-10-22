@@ -89,6 +89,20 @@ describe('hece mcp', () => {
     expect((await call(c, 'flow_start_slice', { n: 2 })).text).toContain('▸ 2. Login')
   })
 
+  it('flow_check_question marks a check question as pending only while a slice waits', async () => {
+    const root = tmpProject()
+    const c = await connect(root)
+    await call(c, 'flow_set_phase', { phase: 'discuss' })
+    runCli(['hook'], { root, stdin: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's', source: 'startup' }) })
+    await call(c, 'flow_set_plan', { slices: [{ title: 'A', files: [], kind: 'teaching' }] })
+    expect((await call(c, 'flow_check_question')).isError).toBe(true)
+    expect(approveAsHuman(root).stdout).toContain('approved the plan')
+    await call(c, 'flow_start_slice', { n: 1 })
+    await call(c, 'flow_finish_slice', { n: 1, summary: 's', connects_to: 'c' })
+    expect((await call(c, 'flow_check_question')).isError).toBe(false)
+    expect(readJson<{ checkPending?: boolean }>(statePaths(root).flow, {}).checkPending).toBe(true)
+  })
+
   it('rejects invalid input via the schema', async () => {
     const c = await connect(tmpProject())
     expect((await call(c, 'flow_set_phase', { phase: 'ship' })).isError).toBe(true)

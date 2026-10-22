@@ -16,6 +16,7 @@ export const TOOL_NAMES = [
   'flow_set_plan',
   'flow_start_slice',
   'flow_finish_slice',
+  'flow_check_question',
   'flow_report_review',
   'prefs_get',
   'activity_note',
@@ -130,6 +131,16 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
     },
     async ({ n, summary, connects_to }) =>
       mutate('flow_finish_slice', (s) => flow.finishSlice(s, n, { summary, connectsTo: connects_to }, now()), { n }),
+  )
+
+  server.registerTool(
+    'flow_check_question',
+    {
+      description:
+        'Call right before you ask the user a check question at a slice stop. Their next answer is then read as the answer to it and never as approval.',
+      inputSchema: {},
+    },
+    async () => mutate('flow_check_question', (s) => flow.markCheckPending(s, now())),
   )
 
   server.registerTool(

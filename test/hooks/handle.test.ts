@@ -107,7 +107,7 @@ describe('handleHook', () => {
 
   it('approves the plan from the picker answer', () => {
     seedFlow(root, { ...plan, mainSessionId: 'main' })
-    const r = handleHook({ hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion', tool_response: { answers: { 'Plan ok?': 'Continue' } } }, ctx())
+    const r = handleHook({ hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion', tool_response: { questions: [{ question: 'Plan ok?', header: 'h', options: [{ label: 'Continue', description: '' }, { label: 'Redo', description: '' }], multiSelect: false }], answers: { 'Plan ok?': 'Continue' } } }, ctx())
     expect(JSON.parse(r.stdout).hookSpecificOutput).toEqual({ hookEventName: 'PostToolUse', additionalContext: 'hece: the user approved the plan' })
     expect(flow().plan!.approved).toBe(true)
   })
@@ -124,7 +124,7 @@ describe('handleHook', () => {
 
   it('records a picked Redo with via=picker', () => {
     seedFlow(root, { ...stopped, mainSessionId: 'main' })
-    const r = handleHook({ hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion', tool_response: { answers: { 'Next?': 'Redo' } } }, ctx())
+    const r = handleHook({ hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion', tool_response: { questions: [{ question: 'Next?', header: 'h', options: [{ label: 'Continue', description: '' }, { label: 'Redo', description: '' }], multiSelect: false }], answers: { 'Next?': 'Redo' } } }, ctx())
     expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user asked to redo slice 1')
     expect(readEvents(statePaths(root).events).find((e) => e.event === 'redo_requested')).toMatchObject({ n: 1, via: 'picker' })
   })
@@ -185,7 +185,7 @@ describe('summarizeTool', () => {
 
 describe('main-session approvals', () => {
   const typed = (session_id?: string) => ({ hook_event_name: 'UserPromptSubmit', session_id, prompt: 'ok' })
-  const picked = (session_id?: string) => ({ hook_event_name: 'PostToolUse', session_id, tool_name: 'AskUserQuestion', tool_response: { answers: { 'Plan?': 'Continue' } } })
+  const picked = (session_id?: string) => ({ hook_event_name: 'PostToolUse', session_id, tool_name: 'AskUserQuestion', tool_response: { questions: [{ question: 'Plan?', header: 'h', options: [{ label: 'Continue', description: '' }, { label: 'Redo', description: '' }], multiSelect: false }], answers: { 'Plan?': 'Continue' } } })
 
   it('records the first explicit non-fork SessionStart as owner and never replaces it', () => {
     seedFlow(root, emptyFlow())
@@ -272,7 +272,7 @@ describe('main-session approvals', () => {
     seedFlow(root, owned)
     const payload = via === 'typed'
       ? { ...typed('side'), prompt: 'redo' }
-      : { ...picked('side'), tool_response: { answers: { 'Next?': 'Redo' } } }
+      : { ...picked('side'), tool_response: { ...picked('side').tool_response, answers: { 'Plan?': 'Redo' } } }
     expect(handleHook(payload, ctx()).stdout).toBe('')
     expect(flow()).toEqual(owned)
     expect(events()).toContain('ignored_approval')
@@ -392,5 +392,68 @@ describe('ownership migration I/O', () => {
     } finally {
       failFlowWrite.mockRestore()
     }
+  })
+})
+
+describe('check question pending', () => {
+  const pending = { ...stopped, mainSessionId: 'main', checkPending: true } as FlowState
+  const typed = (prompt: string, session_id = 'main') => ({ hook_event_name: 'UserPromptSubmit', session_id, prompt })
+  const opt = (label: string) => ({ label, description: '' })
+  const picked = (questions: { question: string; first: string }[], answers: Record<string, string>) => ({
+    hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion',
+    tool_response: { questions: questions.map(q => ({ question: q.question, header: 'h', options: [opt(q.first), opt('Redo')], multiSelect: false })), answers },
+  })
+
+  it.each(['ok', 'go', 'continue'])('treats a typed %s as the check answer, clears the marker and does not approve', word => {
+    seedFlow(root, pending)
+    expect(handleHook(typed(word), ctx()).stdout).toBe('')
+    expect(flow().plan!.slices[0].status).toBe('stopped')
+    expect(flow().checkPending).toBeFalsy()
+    expect(JSON.parse(handleHook(typed(word), ctx()).stdout).hookSpecificOutput.additionalContext).toBe('hece: the user approved slice 1')
+  })
+
+  it('treats a picker answer Continue as the check answer while the marker is set', () => {
+    seedFlow(root, pending)
+    expect(handleHook(picked([{ question: 'Next?', first: 'Continue' }], { 'Next?': 'Continue' }), ctx()).stdout).toBe('')
+    expect(flow().plan!.slices[0].status).toBe('stopped')
+    expect(flow().checkPending).toBeFalsy()
+  })
+
+  it('a prompt from a fork neither approves nor clears the marker', () => {
+    seedFlow(root, pending)
+    handleHook(typed('ok', 'fork'), ctx())
+    expect(flow().checkPending).toBe(true)
+  })
+
+  it('approves only from the question whose first option is Continue', () => {
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    const r = handleHook(picked([{ question: 'Which?', first: 'Alpha' }, { question: 'Next?', first: 'Continue' }], { 'Which?': 'Alpha', 'Next?': 'Continue' }), ctx())
+    expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toBe('hece: the user approved slice 1')
+  })
+
+  it('does not approve when Continue was answered to a different question', () => {
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    handleHook(picked([{ question: 'Which?', first: 'Alpha' }, { question: 'Next?', first: 'Continue' }], { 'Which?': 'Continue', 'Next?': 'Redo' }), ctx())
+    expect(flow().plan!.slices[0].status).toBe('stopped')
+  })
+
+  it('does not approve an ambiguous picker with two Continue-first questions', () => {
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    handleHook(picked([{ question: 'A?', first: 'Continue' }, { question: 'B?', first: 'Continue' }], { 'A?': 'Continue', 'B?': 'Continue' }), ctx())
+    expect(flow().plan!.slices[0].status).toBe('stopped')
+  })
+
+  it('does not record a redo from an unrelated question that offers Redo', () => {
+    seedFlow(root, { ...stopped, mainSessionId: 'main' })
+    expect(handleHook(picked([{ question: 'Which?', first: 'Alpha' }], { 'Which?': 'Redo' }), ctx()).stdout).toBe('')
+    expect(flow().plan!.slices[0].redoRequested).toBeFalsy()
+    expect(events()).not.toContain('redo_requested')
+  })
+
+  it('a Redo picked on a check question is only the check answer', () => {
+    seedFlow(root, pending)
+    expect(handleHook(picked([{ question: 'Why?', first: 'Because' }], { 'Why?': 'Redo' }), ctx()).stdout).toBe('')
+    expect(flow().checkPending).toBeFalsy()
+    expect(flow().plan!.slices[0].redoRequested).toBeFalsy()
   })
 })

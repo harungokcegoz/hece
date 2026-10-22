@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { emptyFlow, SliceInput } from '../../src/flow/types.js'
 import {
-  setPhase, addDecision, setPlan, startSlice, finishSlice, reportReview, approve, requestRedo, FlowError,
+  setPhase, addDecision, setPlan, startSlice, finishSlice, reportReview, approve, requestRedo, markCheckPending, FlowError,
 } from '../../src/flow/flow.js'
 
 const slices: SliceInput[] = [
@@ -216,5 +216,23 @@ describe('main session across flow transitions', () => {
     const fresh = setPlan(state, slices, { guards: true }, 10)
     expect(fresh.mainSessionId).toBe('main')
     expect(fresh.plan!.approved).toBe(false)
+  })
+})
+
+describe('check question marker', () => {
+  const waiting = () => finishSlice(startSlice(approvedPlan(), 1, { guards: true }, 4), 1, { summary: 's', connectsTo: 'c' }, 5)
+
+  it('is set while a slice waits for the user', () => {
+    expect(markCheckPending(waiting(), 6).checkPending).toBe(true)
+  })
+  it.each([
+    ['no plan', () => emptyFlow()],
+    ['a working slice', () => startSlice(approvedPlan(), 1, { guards: true }, 4)],
+  ])('is refused with %s', (_n, make) => {
+    expect(() => markCheckPending(make(), 6)).toThrow(FlowError)
+  })
+  it('does not survive starting a slice again', () => {
+    const redo = requestRedo(markCheckPending(waiting(), 6), 7).state
+    expect(startSlice(redo, 1, { guards: true }, 8).checkPending).toBeFalsy()
   })
 })

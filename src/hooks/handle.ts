@@ -3,7 +3,7 @@ import { statePaths } from '../state/paths.js'
 import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
 import { renderFlow } from '../flow/render.js'
-import { approve, requestRedo } from '../flow/flow.js'
+import { approve, requestRedo, clearCheckPending } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
 import { describeCommand } from '../activity/describe.js'
 import { EDIT_TOOLS, decideTool, isContinueIntent, isRedoIntent, pickerApproved, pickerRedo } from '../guards/guards.js'
@@ -121,15 +121,26 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     bindMain(p.session_id)
   }
 
-  const fromMain = (via: string): boolean => {
-    const reason = !sessionsReadable ? 'unreadable_sessions'
+  const mainReason = (): string | null =>
+    !sessionsReadable ? 'unreadable_sessions'
       : !hasSessionId(flow.mainSessionId) ? 'missing_main_session'
       : !hasSessionId(p.session_id) ? 'missing_session'
       : p.session_id !== flow.mainSessionId || p.source === 'fork' || forkIds.has(p.session_id) ? 'not_main_session'
       : null
+  const fromMain = (via: string): boolean => {
+    const reason = mainReason()
     if (reason === null) return true
     ev('ignored_approval', { via, reason })
     return false
+  }
+
+  // The user's next answer in the main session belongs to the open check question: it is never an approval.
+  const consumeCheckAnswer = (via: string): boolean => {
+    if (!flow.checkPending || mainReason() !== null) return false
+    flow = clearCheckPending(flow, ctx.now)
+    writeJsonAtomic(paths.flow, flow)
+    ev('check_answered', { via })
+    return true
   }
 
   const recordRedo = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
@@ -169,7 +180,9 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     case 'UserPromptSubmit': {
       setIdle(false)
       ev('prompt', { text: oneLine(p.prompt ?? '') })
+      const wasCheckAnswer = consumeCheckAnswer('typed')
       if (p.prompt && isRedoIntent(p.prompt)) return recordRedo('UserPromptSubmit', 'typed')
+      if (wasCheckAnswer) return none
       return p.prompt && isContinueIntent(p.prompt) ? recordApproval('UserPromptSubmit', 'typed') : none
     }
     case 'PreToolUse': {
@@ -189,8 +202,10 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     }
     case 'PostToolUse': {
       if (p.tool_name !== PICKER_TOOL) return none
+      const wasCheckAnswer = consumeCheckAnswer('picker')
       // redo wins if both were somehow selected: it is the answer that does not advance the flow
       if (pickerRedo(p.tool_response)) return recordRedo('PostToolUse', 'picker')
+      if (wasCheckAnswer) return none
       return pickerApproved(p.tool_response) ? recordApproval('PostToolUse', 'picker') : none
     }
     case 'Stop':

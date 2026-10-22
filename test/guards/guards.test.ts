@@ -174,6 +174,38 @@ describe('pickerApproved', () => {
     expect(pickerRedo({ questions: [question] })).toBe(false)
     expect(pickerRedo(undefined)).toBe(false)
   })
+  describe('multi-question pickers', () => {
+    const q = (text: string, first: string) => ({ question: text, header: 'h', options: [{ label: first, description: '' }, { label: 'Other', description: '' }], multiSelect: false })
+    const picker = (qs: ReturnType<typeof q>[], answers: Record<string, string>) => ({ questions: qs, answers })
+
+    it('approves from the question whose first option is Continue, ignoring other answers', () => {
+      const r = picker([q('Which db?', 'Postgres'), q('Next?', 'Continue')], { 'Which db?': 'Other', 'Next?': 'Continue' })
+      expect(pickerApproved(r)).toBe(true)
+    })
+    it('does not approve when only another question was answered Continue', () => {
+      const r = picker([q('Which?', 'Continue-ish'), q('Next?', 'Continue')], { 'Which?': 'Continue', 'Next?': 'Other' })
+      expect(pickerApproved(r)).toBe(false)
+    })
+    it('does not approve when a question whose first option is not Continue is answered Continue', () => {
+      const r = picker([q('Which?', 'Alpha')], { 'Which?': 'Continue' })
+      expect(pickerApproved(r)).toBe(false)
+    })
+    it('does not approve when more than one question has Continue as its first option', () => {
+      const r = picker([q('A?', 'Continue'), q('B?', 'Continue')], { 'A?': 'Continue', 'B?': 'Continue' })
+      expect(pickerApproved(r)).toBe(false)
+    })
+    it('does not approve without the questions echo', () => {
+      expect(pickerApproved({ answers: { 'Next?': 'Continue' } })).toBe(false)
+    })
+    it('pickerRedo reads only the approval question, like pickerApproved', () => {
+      expect(pickerRedo(picker([q('A?', 'Continue'), q('B?', 'X')], { 'A?': 'Redo', 'B?': 'Other' }))).toBe(true)
+      expect(pickerRedo(picker([q('A?', 'Continue'), q('B?', 'X')], { 'A?': 'Other', 'B?': 'Redo' }))).toBe(false)
+      expect(pickerRedo(picker([q('A?', 'Continue'), q('B?', 'Continue')], { 'A?': 'Redo', 'B?': 'Redo' }))).toBe(false)
+      expect(pickerRedo(picker([q('A?', 'Alpha')], { 'A?': 'Redo' }))).toBe(false)
+      expect(pickerRedo({ answers: { 'Next?': 'Redo' } })).toBe(false)
+    })
+  })
+
   it('does not approve other answers or question text that merely mentions continue', () => {
     expect(pickerApproved({ answers: { 'Continue or redo?': 'Redo' } })).toBe(false)
     expect(pickerApproved({ answers: { q: 'Continue later' } })).toBe(false)

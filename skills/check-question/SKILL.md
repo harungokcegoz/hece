@@ -11,4 +11,4 @@ Ask one when `check_questions` is `every`, or when it's `non-routine` and the sl
 - Not trivia, not syntax. It should be answerable in one sentence.
 - Format: `? <question>` and on the next line `(answer, or type skip)`.
 
-Wait for the answer. Reply in at most 2 lines: confirm it, or correct it with the specific reason. Then continue the slice stop.
+Call `flow_check_question` right before you ask it. The user's next answer, even a plain `ok`, is then taken as the answer to the question and never as approval of the slice. Wait for the answer. Reply in at most 2 lines: confirm it, or correct it with the specific reason. Then continue the slice stop.
