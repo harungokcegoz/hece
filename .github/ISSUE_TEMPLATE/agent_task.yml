@@ -1,0 +1,70 @@
+name: Agent-ready task
+description: One self-contained change that a person or an AI agent can pick up and finish in one PR.
+title: "<area>: <outcome, imperative>"
+labels: [needs triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for work that's already understood. Use **one issue per PR**. Anything bigger is an **Epic**.
+        **Title:** `<area>: <outcome>`, where `<area>` is one of `activity`, `window`, `panels`, `core`, `docs`, `verify`. For example, `activity: don't let $((x<<y)) hide later commands`.
+        A maintainer adds the priority (`P1`/`P2`), the `area: …` labels, the milestone, and `agent-ready` once the brief is complete.
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: 1–3 lines. What goes wrong for the user, and where it was found (review, smoke test, user report).
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: A concrete example or repro, e.g. the command, the input, and what hece shows.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What hece should do instead.
+    validations:
+      required: true
+  - type: textarea
+    id: task
+    attributes:
+      label: Task
+      description: What to change. End with an **Out of scope:** line saying what not to touch.
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files
+      description: Where the change lives, including the tests.
+      placeholder: src/activity/describe.ts, test/activity/describe.test.ts
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: Acceptance criteria as checkboxes.
+      value: |
+        - [ ] Failing test first (RED), then passing (GREEN)
+        - [ ] <specific acceptance check>
+        - [ ] `npm test && npm run typecheck && npm run build` pass
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes for agents
+      value: |
+        Follow **CONTRIBUTING → Working from issues**. Project rules that apply:
+        - Test first: a failing test (RED), then passing (GREEN).
+        - The hook always exits 0 and writes nothing without `.hece/state/flow.json`.
+        - Activity never shows raw command text or secrets. When unsure, be vague, never wrong.
+        - Panels never write state. No new runtime dependencies.
+        - Never add a `Co-Authored-By` trailer or AI attribution.
+        - Ask the user before pushing or merging.

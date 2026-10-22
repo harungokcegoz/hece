@@ -1,0 +1,33 @@
+name: Epic
+description: A larger piece of work (a plan) that gets brainstormed and broken into agent-ready tasks.
+title: "epic: <name> (plan <n>)"
+labels: [epic, needs triage]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What this unlocks for someone who wants to stay in the loop.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What's in it, with spec references. End with an **Out of scope:** line.
+    validations:
+      required: true
+  - type: textarea
+    id: children
+    attributes:
+      label: Child issues
+      description: Starting checklist. The real child issues are created when the epic is brainstormed (brainstorming → spec amendment → plan).
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions
+      description: Decisions to make with the user during brainstorming.

@@ -21,71 +21,34 @@
 - **D9:** Activity speaks plain language. It combines agent intent from `activity_note` with rule-based action lines.
 - **D10:** the MVP panels are plain ANSI; Ink comes in with interactive panels.
 
-## 2. Verify first (not yet seen working)
+## 2. Work lives in GitHub issues
 
-1. **A real feature inside the window.** Run `cd <project> && hece` and go through discuss → plan → one slice. Watch Activity fill with `Now: …` lines and plain actions, watch Flow move, then check that `/exit` closes the whole window. Every part has tests, but nobody has watched it live yet.
-2. **A real picker capture.** The `AskUserQuestion` PostToolUse fixtures in `test/fixtures/claude-code/` were *built* from the transcript shape, not captured from a real hook. Re-capture with `HECE_CAPTURE=1 hece --no-frame`: answer one picker with `Continue` and one with `Redo`, then replace the two fixtures. While doing it, check whether an agent-supplied `tool_input.answers` could ever reach `tool_response.answers`. If it could, that's self-approval.
-3. **CI** on `6bf4ae0`.
+The backlog and the next plans are tracked as **issues** in the agreed structure (see `CONTRIBUTING.md` → *Working from issues*). Each issue is one PR-sized chunk an agent can take cold. Don't duplicate the backlog here. Update the issues instead.
 
-## 3. Open issues (prioritised backlog)
+| Milestone | Issues |
+|---|---|
+| [Verify v0.1](https://github.com/harungokcegoz/hece/milestone/1) | #3 live feature in the window · #4 real picker capture + agent-supplied answers |
+| [Backlog](https://github.com/harungokcegoz/hece/milestone/2): P1 Activity | #5 `$((x<<y))` hides commands · #6 redirect edge cases · #7 secrets in Grep/Glob |
+| Backlog: P1 window | #10 node upgrade breaks open windows · #11 untagged pane after SIGKILL |
+| Backlog: P2 | #8 dry runs · #9 "Now:" only on newest · #12 lock takeover · #13 reattach messages · #14 home note · #15–#18 panels · #19–#27 core |
+| [Plan 2b](https://github.com/harungokcegoz/hece/milestone/3) | #28 approvals ignore side chats (prerequisite) · #29 epic: interactive panels |
+| [Plan 3](https://github.com/harungokcegoz/hece/milestone/4) | #30 epic: onboarding (setup, prefs, doctor) |
+| [Plan 4](https://github.com/harungokcegoz/hece/milestone/5) | #31 no-build plugin install · #32 npm publish · #33 epic: adapters |
 
-### P1: truthfulness of Activity (hece's core promise: never mislead)
-- `$((x<<y))` followed by a newline is read as a heredoc and **can hide a later command**, such as a force-push. Skip `<<` inside `$((…))`. (`src/activity/describe.ts`)
-- `[[ a > b ]]` is shown as "writing b". Don't treat `>` inside `[[ … ]]` or `(( … ))` as a redirect.
-- `>|` isn't recognised as a write, because the command is split on `|` first.
-- `tee <file>` isn't reported as a write.
-- `git clean -n` and `git push --dry-run` are described as if they really ran.
-- Short secrets (under 24 chars) in Grep patterns are echoed, and Glob targets are echoed raw.
-- Old notes all keep the "Now:" prefix, so history reads as current. Put "Now:" only on the newest note.
+**Suggested order:**
+1. #3 and #4 (verify);
+2. the P1 backlog;
+3. #28 and then epic #29;
+4. #31;
+5. epics #30 and #33.
 
-### P1: window robustness
-- **The hook node path is pinned.** `process.execPath` (a versioned Homebrew Cellar path) is written into the hooks and panes. After `brew upgrade node`, open windows break. Resolve `node` from PATH, or use the `hece` bin.
-- A SIGKILL between `split-window` and `set -p @hece_role` leaves an untagged pane that dedupe never removes. Chain `split-window … \; set -p …` in one tmux call.
-- Lock edge cases in `src/frame/lock.ts`: a takeover race with 3 or more waiters on a stale lock, and a fit running longer than 10 s losing its lock by age. Dedupe repairs the result, but tighten this.
-- The "already open" hint (`tmux -L … attach`) can't be run from inside tmux. Suggest `switch-client`, or prefix with `TMUX=`.
-- Reattaching silently ignores new claude args. Print one line saying so.
-- The home-folder note is skipped in plain mode, and may be hidden by the alternate screen.
+The user decides.
 
-### P2: panels
-- Malformed `sessions.json` or `flow.json` shapes show raw JS error text. Validate shapes and show "<file> is unreadable".
-- Width table gaps: 0x1FA70–1FAFF, 0x2600–27BF, VS16 emoji and 0x231A–23FF can overflow by one column. C1 controls aren't stripped in `fitLine`. East Asian Ambiguous glyphs take 2 columns in CJK locales.
-- "Claude: waiting" stays red only at 13 columns or more. The current-line pick prefers `▸ Build` over the slice line.
-- A possible last-column erase on xterm-style terminals. Keys typed into a panel pane are echoed (this resolves itself in 2b).
-- The 256 KB tail read drops one valid line when it starts exactly on a line boundary.
+**How to take an issue:** read it, comment "taking this", branch `issue-<n>-<slug>`, work test-first, and open a PR with `Closes #<n>` that includes test evidence and rulings. The user approves every push and merge.
 
-### P2: core engine (deferred from plan 1)
-- `readEvents` and `readYaml` swallow non-ENOENT errors (EACCES, EISDIR). `writeJsonAtomic` leaves a temp file behind if it throws.
-- `tsconfig` doesn't typecheck `test/`.
-- The prefs `RULES` lookup matches prototype keys (`constructor`). Use `Object.hasOwn`.
-- `sessions.json` grows without bound.
-- A lost-update race between the hook and MCP writes to `flow.json`. An approval could be lost; it's benign, because the user re-approves.
-- An existing `.hece/.gitignore` without `state/` is left alone. Append the line.
-- A check-question answer of `ok` or `go` is read as slice approval. A multi-question picker approves if one answer is Continue.
-- `hece status` run from a subfolder doesn't walk up to find `.hece`.
-- **Contributor papercut:** the repo-root `.mcp.json` is also read as a *project* MCP config when you work inside the hece repo, so the `hece` MCP server fails to connect there (`${CLAUDE_PLUGIN_ROOT}` is unset). Move the server definition into `.claude-plugin/plugin.json`.
+**Epics** (#29, #30, #33) start with superpowers brainstorming with the user, one question at a time. Then come a spec amendment and a plan, and then the epic is split into `agent-ready` child issues.
 
-## 4. Next plans
-
-Each goes through brainstorming → spec amendment → writing-plans → subagent-driven development. The user decides the order. The suggested order is below.
-
-### Plan 2b: interactive panels (spec §9, §10.5)
-- **Panel keys → Claude.** Enter on a waiting slice in Flow sends the structured event `[hece] event=continue step=slice-N`. It goes over Claude Code channels when available. Otherwise it's sent as keystrokes, only when the agent is idle and the input line is empty, with a visible queue. The skills already handle `[hece] event=` lines.
-- **Arrow navigation** in Flow: open a step's summary (what changed and how it connects).
-- **Side chats** from a Sessions panel: `claude --resume <id> --fork-session` swapped into the middle pane, with a key to switch back. Throwaway: nothing returns to main. **Fix first:** approvals must check `session_id`, so a typed `ok` in a side chat can't approve the main flow.
-- **Ink** for the interactive panels (D10).
-- Fold in the P1 Activity items above.
-
-### Plan 3: onboarding (spec §8)
-- `hece setup`: a plain wizard, one thing per screen, arrow keys. It covers what hece is, picking the agent, picking a preset with a rendered example, custom settings, layout, delegate models, guards, and a summary.
-- `hece prefs`: reopen any single screen.
-- `hece doctor`: checks tmux, superpowers, the build, Node, and the plugin wiring.
-
-### Plan 4: release
-- **Bundling:** plugin users shouldn't need `npm run build` (`dist/` is gitignored).
-- **npm publish:** the name `hece` was free on 2026-10-17. Also versioning and a CHANGELOG.
-- **Adapters:** Codex CLI, Gemini CLI, OpenCode (`adapters/*/README.md` placeholders exist). Each needs a short adapter spec first.
-
-## 5. How the user works (keep these)
+## 3. How the user works (keep these)
 
 - **Process:** superpowers flow. Brainstorm one question at a time, then spec, then plan, then subagent-driven execution:
   - **Sonnet** implementers, each followed by a per-task Sonnet review;
@@ -98,7 +61,7 @@ Each goes through brainstorming → spec amendment → writing-plans → subagen
 - **Wording:** don't call users "junior". Write for every experience level.
 - **Rulings:** record the decisions you make for the user, and list them when you finish.
 
-## 6. Environment notes
+## 4. Environment notes
 
 - macOS, Node 25, tmux 3.8 (Homebrew). `hece` is linked globally with `npm link` to the repo, so run `npm run build` after changes.
 - Demo project: `/tmp/hece-demo` (a git repo; `rm -rf .hece` resets it).

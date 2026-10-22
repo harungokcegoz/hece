@@ -9,6 +9,36 @@ Thanks for your interest! hece is early, so issues, ideas and pull requests all 
 - **First contribution:** look for [`good first issue`](https://github.com/harungokcegoz/hece/labels/good%20first%20issue) or [`help wanted`](https://github.com/harungokcegoz/hece/labels/help%20wanted). Adapters for other agents (`area: adapters`) are especially welcome.
 - **Bigger changes:** open an issue or discussion before writing code, so we can agree on the approach first. That's the hece way, after all.
 
+## Working from issues
+
+The roadmap lives in [issues](https://github.com/harungokcegoz/hece/issues) and [milestones](https://github.com/harungokcegoz/hece/milestones): `Verify v0.1`, `Backlog`, `Plan 2b`, `Plan 3` and `Plan 4`. Each issue is one self-contained chunk, so a person or an AI agent can pick it up cold, without the history.
+
+**Structure (every issue):**
+- **Title:** `<area>: <outcome, imperative>`, e.g. `activity: don't let $((x<<y)) hide later commands`. The areas are `activity`, `window`, `panels`, `core`, `docs`, `verify`; large work uses `epic: …`.
+- **Body:** Why · Current behavior · Expected behavior · Task (with **Out of scope**) · Files · Done when (checkboxes) · Notes for agents. Use the **Agent-ready task** or **Epic** form.
+- **Labels:**
+  - exactly one priority: `P1` (wrong or unsafe behavior) or `P2` (polish or robustness);
+  - one or more `area: …` labels;
+  - a type: `bug`, `enhancement`, `verify`, `security`, `documentation` or `epic`;
+  - `agent-ready` once the brief is complete.
+- **Milestone:** exactly one.
+- **Size:** one issue is one PR. Anything bigger becomes an epic, broken into child issues when it is brainstormed.
+
+**Lifecycle:**
+```
+open + agent-ready ─▶ comment "taking this" ─▶ branch issue-<n>-<slug>
+   ─▶ PR "Closes #<n>" (why · what · test evidence · rulings) ─▶ review
+   ─▶ maintainer merges (squash) ─▶ issue closes
+```
+
+**For AI agents:**
+- Read the issue, `CONTRIBUTING.md`, and the spec sections it references.
+- Work test-first, keep the PR to the issue's scope, and record any decision you made in the PR's **Rulings** section.
+- Never push to `main`, merge, or publish without the maintainer's approval.
+- Never add a `Co-Authored-By` trailer or AI attribution.
+- Check fixtures and screenshots for personal data.
+- If the brief is wrong or incomplete, say so in the issue instead of guessing.
+
 ## Development setup
 
 You need Node.js **22.12 or newer** for development (the test runner requires it). Using hece only needs Node 20+.
