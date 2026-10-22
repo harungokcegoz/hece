@@ -35,6 +35,17 @@ describe('handleHook', () => {
     expect(events()).toEqual(['session_start', 'prefs_error'])
   })
 
+  it('keeps only the last 50 sessions, newest last', () => {
+    seedFlow(root, emptyFlow())
+    for (let i = 0; i < 60; i++) {
+      handleHook({ hook_event_name: 'SessionStart', session_id: `s${i}`, source: 'startup' }, { ...ctx(), now: i })
+    }
+    const recorded = readJson<{ sessionId: string }[]>(statePaths(root).sessions, [])
+    expect(recorded).toHaveLength(50)
+    expect(recorded[0].sessionId).toBe('s10')
+    expect(recorded[49].sessionId).toBe('s59')
+  })
+
   it('denies an edit while a slice waits, with the reason, and logs it', () => {
     seedFlow(root, stopped)
     const r = handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write', tool_input: { file_path: '/p/a.ts' } }, ctx())

@@ -33,6 +33,7 @@ export interface SessionRecord {
   at: number
 }
 
+const MAX_SESSIONS = 50
 const PICKER_TOOL = 'AskUserQuestion'
 const NON_FORK_SOURCES = new Set(['startup', 'resume', 'clear', 'compact'])
 const FLOW_PHASE_TOOLS = new Set(['mcp__plugin_hece_hece__flow_set_phase', 'mcp__hece__flow_set_phase'])
@@ -159,7 +160,8 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     case 'SessionStart': {
       if (sessionsReadable && hasSessionId(p.session_id)) {
         sessions.push({ sessionId: p.session_id, source: p.source ?? 'unknown', at: ctx.now })
-        writeJsonAtomic(paths.sessions, sessions)
+        // keep the file bounded: only recent sessions matter for ownership checks
+        writeJsonAtomic(paths.sessions, sessions.slice(-MAX_SESSIONS))
         bindRecordedMain()
       }
       ev('session_start', { source: p.source })
