@@ -6,7 +6,7 @@ import { renderFlow } from '../flow/render.js'
 import { loadPrefs } from '../prefs/load.js'
 
 export function runStatus(): void {
-  const root = resolveRoot(process.env)
+  const root = resolveRoot(process.env, undefined, { walkUp: true })
   const paths = statePaths(root)
   const { prefs, errors } = loadPrefs(process.env, root)
   if (!fs.existsSync(paths.flow)) {

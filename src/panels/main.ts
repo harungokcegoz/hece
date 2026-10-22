@@ -140,7 +140,7 @@ export async function runPanel(argv: string[]): Promise<void> {
     process.exitCode = 1
     return
   }
-  const root = resolveRoot(process.env)
+  const root = resolveRoot(process.env, undefined, { walkUp: true })
   const size = () => ({
     width: process.stdout.columns || Number(process.env.HECE_PANEL_WIDTH) || 40,
     height: process.stdout.rows || Number(process.env.HECE_PANEL_HEIGHT) || 24,
