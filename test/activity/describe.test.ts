@@ -87,6 +87,22 @@ describe('describeCommand: long commands, heredocs and redirects', () => {
   it('keeps describing what comes after a heredoc', () => {
     expect(describeCommand("cat <<'EOF'\nhi\nEOF\ngit push --force")).toBe('looking around the files, then force-pushing to a remote')
   })
+  it.each([
+    'echo $((x<<y))',
+    'echo $(((x + 1)<<y))',
+    'echo $((1 + $((x<<y))))',
+    'echo $((x<<y)) $((a<<b))',
+  ])('keeps describing commands after arithmetic shifts: %s', (arithmetic) => {
+    expect(describeCommand(`${arithmetic}\ngit push --force`)).toBe('running a command, then force-pushing to a remote')
+  })
+  it('keeps numeric arithmetic shifts vague', () => {
+    expect(describeCommand('echo $((1<<2))')).toBe('running a command')
+    expect(describeCommand('echo $((1<<2))\ngit push --force')).toBe('running a command, then force-pushing to a remote')
+  })
+  it.each(['$((1<<2))', '$((x<<y))', '$((1 + $((x<<y))))'])('still skips a real heredoc after arithmetic: %s', (arithmetic) => {
+    expect(describeCommand(`echo ${arithmetic} <<EOF\nrm -rf build\nEOF\ngit push --force`))
+      .toBe('running a command, then force-pushing to a remote')
+  })
   it('reports redirections to files, but not to /dev/null or fd copies', () => {
     expect(describeCommand('echo x >> log.txt')).toBe('writing log.txt')
     expect(describeCommand('echo hi > /dev/null')).toBe('running a command')
