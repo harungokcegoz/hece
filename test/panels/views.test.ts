@@ -3,7 +3,7 @@ import { emptyFlow } from '../../src/flow/types.js'
 import { setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.js'
 import { fitLine, fitLines, displayWidth, charWidth, isCjkLocale } from '../../src/panels/fit.js'
 import { stripAnsi } from '../../src/panels/color.js'
-import { flowPanelLines, colorFlowLine, sessionsPanelLines, fitFlowLines } from '../../src/panels/views.js'
+import { flowPanelLines, colorFlowLine, sessionsPanelLines, fitFlowLines, paintFlowLines } from '../../src/panels/views.js'
 
 // Ambiguous width depends on the locale, so every test here starts from a non-CJK one.
 const KEYS = ['LC_ALL', 'LC_CTYPE', 'LANG'] as const
@@ -170,5 +170,68 @@ describe('display width gaps', () => {
       }
       expect(fitLine('abcdef', 1)).toBe('')
     })
+  })
+})
+
+describe('Flow on narrow panes', () => {
+  const RED = '\x1b[1;31m'
+  const waitingFlow = () => {
+    let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
+    s = finishSlice(startSlice(approve(s, 2).state, 1, { guards: true }, 3), 1, { summary: 's', connectsTo: 'c' }, 4)
+    return flowPanelLines(s, { guards: true, idle: true })
+  }
+  const workingFlow = () => {
+    let s = setPlan(emptyFlow(), [{ title: 'Token model', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
+    s = startSlice(approve(s, 2).state, 1, { guards: true }, 3)
+    return flowPanelLines(s, { guards: true, idle: false })
+  }
+
+  for (let w = 8; w <= 14; w++) {
+    it(`paints the waiting status and waiting slice red at width ${w}`, () => {
+      const out = paintFlowLines(waitingFlow(), w, 100)
+      const status = out.find((l) => stripAnsi(l).startsWith('Claude:'))
+      const slice = out.find((l) => stripAnsi(l).includes('■'))
+      expect(status, 'status line').toBeDefined()
+      expect(status!.startsWith(RED)).toBe(true)
+      expect(slice, 'waiting slice').toBeDefined()
+      expect(slice!.startsWith(RED)).toBe(true)
+      for (const l of out) expect(displayWidth(stripAnsi(l))).toBeLessThanOrEqual(w)
+    })
+    it(`does not paint a working status red at width ${w}`, () => {
+      const out = paintFlowLines(workingFlow(), w, 100)
+      const status = out.find((l) => stripAnsi(l).startsWith('Claude:'))
+      expect(status).toBeDefined()
+      expect(status!).not.toContain(RED)
+    })
+  }
+
+  it('paints a cut plan-waiting line red', () => {
+    let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }], { guards: true }, 1)
+    const out = paintFlowLines(flowPanelLines(s, { guards: true, idle: null }), 10, 100)
+    const plan = out.find((l) => stripAnsi(l).startsWith('▸ Plan'))
+    expect(plan).toBeDefined()
+    expect(plan!.startsWith(RED)).toBe(true)
+  })
+
+  it('keeps the working slice line over the phase line in a short pane', () => {
+    const lines = workingFlow()
+    for (const h of [3, 4]) {
+      const out = fitFlowLines(lines, 40, h)
+      expect(out.length).toBeLessThanOrEqual(h)
+      expect(out).toContain('  ▸ 1. Token model')
+      expect(out).not.toContain('▸ Build')
+      expect(out).toContain('Claude: working…')
+      expect(out).toContain('guards: on')
+    }
+    // with room to spare the phase line comes back
+    expect(fitFlowLines(lines, 40, 100)).toContain('▸ Build')
+  })
+  it('still puts a waiting slice before a working one', () => {
+    const lines = ['hece · build', '▸ Build', '  ▸ 1. A', '  ■ 2. B  ← waiting for you', '', 'Claude: waiting for you', 'guards: on']
+    expect(fitFlowLines(lines, 40, 3)).toEqual(['  ■ 2. B  ← waiting for you', 'Claude: waiting for you', 'guards: on'])
+  })
+  it('paintFlowLines paints a working slice yellow after fitting', () => {
+    const out = paintFlowLines(workingFlow(), 10, 100)
+    expect(out.find((l) => stripAnsi(l).startsWith('  ▸ 1.'))).toContain('\x1b[1;33m')
   })
 })

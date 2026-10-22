@@ -7,7 +7,7 @@ import { SessionRecord } from '../hooks/handle.js'
 import { buildActivity } from '../activity/view.js'
 import { fitLine, fitLines, displayWidth } from './fit.js'
 import { color } from './color.js'
-import { flowPanelLines, fitFlowLines, colorFlowLine, sessionsPanelLines, isFlowState, isSessionList, isAgentState } from './views.js'
+import { flowPanelLines, paintFlowLines, sessionsPanelLines, isFlowState, isSessionList, isAgentState } from './views.js'
 
 export type PanelWidget = 'flow' | 'activity' | 'sessions'
 const WIDGETS: readonly string[] = ['flow', 'activity', 'sessions']
@@ -122,7 +122,7 @@ export function panelFrame(
       idle: flow && agent ? agent.idle : null,
       home: !flow && isHomeRoot(root, homeDir(env)),
     })
-    return clamp(fitFlowLines(lines, width, height).map(colorFlowLine))
+    return clamp(paintFlowLines(lines, width, height))
   }
 
   const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height))
@@ -131,6 +131,14 @@ export function panelFrame(
   }
   const paint = { header: color.boldCyan, note: color.yellow, action: (s: string) => s, alert: color.red, milestone: color.green }
   return clamp(view.map((v) => paint[v.kind](fitLine(v.text, width))))
+}
+
+// Each row is erased before it is drawn, never after: a clear-to-end sent once the row is
+// written would wipe the last column on terminals that hold a pending wrap there. The same goes
+// for the erase below the frame: it starts on a fresh row, and is skipped when the frame fills the pane.
+export function frameText(lines: string[], rows: number): string {
+  const body = lines.map((l) => '\x1b[2K' + l).join('\r\n')
+  return lines.length < rows ? body + '\r\n\x1b[J' : body
 }
 
 export async function runPanel(argv: string[]): Promise<void> {
@@ -203,7 +211,7 @@ export async function runPanel(argv: string[]): Promise<void> {
 
   send('\x1b[?1049h\x1b[?25l') // alternate screen, hide cursor
   const draw = (force = false) => {
-    const text = frame().map((l) => l + '\x1b[K').join('\r\n') + '\x1b[J'
+    const text = frameText(frame(), size().height)
     if (force || text !== last) {
       send('\x1b[H' + text) // overwrite in place: no clear, no flicker
       last = text
