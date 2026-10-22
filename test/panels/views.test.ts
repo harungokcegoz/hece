@@ -1,9 +1,25 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { emptyFlow } from '../../src/flow/types.js'
 import { setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.js'
-import { fitLine, fitLines, displayWidth } from '../../src/panels/fit.js'
+import { fitLine, fitLines, displayWidth, charWidth, isCjkLocale } from '../../src/panels/fit.js'
 import { stripAnsi } from '../../src/panels/color.js'
 import { flowPanelLines, colorFlowLine, sessionsPanelLines, fitFlowLines } from '../../src/panels/views.js'
+
+// Ambiguous width depends on the locale, so every test here starts from a non-CJK one.
+const KEYS = ['LC_ALL', 'LC_CTYPE', 'LANG'] as const
+const saved: Record<string, string | undefined> = {}
+beforeEach(() => {
+  for (const k of KEYS) {
+    saved[k] = process.env[k]
+    delete process.env[k]
+  }
+})
+afterEach(() => {
+  for (const k of KEYS) {
+    if (saved[k] === undefined) delete process.env[k]
+    else process.env[k] = saved[k]
+  }
+})
 
 describe('fit', () => {
   it('cuts long lines with an ellipsis and never splits a character', () => {
@@ -91,5 +107,68 @@ describe('sessionsPanelLines', () => {
   it('lists the most recent sessions', () => {
     expect(sessionsPanelLines([])).toEqual(['none yet'])
     expect(sessionsPanelLines([{ sessionId: 'abcdef1234', source: 'startup', at: 1 }])).toEqual(['• main abcdef12'])
+  })
+})
+
+describe('display width gaps', () => {
+  it('counts the Symbols and Pictographs Extended-A range (🪄 🫠) as 2 columns', () => {
+    expect(displayWidth('🪄')).toBe(2)
+    expect(displayWidth('🫠')).toBe(2)
+    expect(charWidth(0x1fa70)).toBe(2)
+    expect(charWidth(0x1faff)).toBe(2)
+  })
+  it('counts emoji-presentation symbols in 0x2600-27BF as 2 columns (✅ ⭐ ⚡ ❌)', () => {
+    for (const ch of ['✅', '⭐', '⚡', '❌', '✨']) expect(displayWidth(ch)).toBe(2)
+  })
+  it('keeps text-presentation symbols the UI relies on at 1 column', () => {
+    for (const ch of ['✓', '✔', '✗', '★', '☐']) expect(displayWidth(ch)).toBe(1)
+  })
+  it('counts the 0x231A-23FF emoji (⌚ ⏳ ⏩) as 2 columns', () => {
+    for (const ch of ['⌚', '⌛', '⏩', '⏳']) expect(displayWidth(ch)).toBe(2)
+    expect(displayWidth('⌘')).toBe(1)
+  })
+  it('counts a VS16 emoji presentation sequence (❤️) as 2 columns', () => {
+    expect(displayWidth('❤\ufe0f')).toBe(2)
+    expect(displayWidth('❤')).toBe(1)
+    expect(displayWidth('☺\ufe0f')).toBe(2)
+  })
+  it('never lets a line with these emoji overflow the pane', () => {
+    for (const text of ['🪄🫠✅⭐⌚❤️'.repeat(6), 'ok ❤️ ❤️ ❤️ ❤️ ❤️ ❤️ ❤️']) {
+      for (const w of [3, 4, 7, 10]) expect(displayWidth(fitLine(text, w))).toBeLessThanOrEqual(w)
+    }
+    expect(fitLine('❤️❤️❤️', 5)).toBe('❤️❤️…')
+  })
+  it('strips C1 controls (0x80-0x9F)', () => {
+    expect(fitLine('a\x9bb\x85c\x80d\x9f', 10)).toBe('abcd')
+  })
+
+  describe('ambiguous width', () => {
+    it('is narrow in a non-CJK locale', () => {
+      process.env.LANG = 'en_US.UTF-8'
+      expect(isCjkLocale()).toBe(false)
+      for (const ch of ['■', '▸', '←', '◆', '·', '…']) expect(displayWidth(ch)).toBe(1)
+    })
+    it('is wide in a CJK locale (LANG, LC_CTYPE, LC_ALL precedence)', () => {
+      process.env.LANG = 'ja_JP.UTF-8'
+      expect(isCjkLocale()).toBe(true)
+      for (const ch of ['■', '▸', '←', '◆']) expect(displayWidth(ch)).toBe(2)
+      process.env.LC_CTYPE = 'en_US.UTF-8'
+      expect(isCjkLocale()).toBe(false)
+      process.env.LC_ALL = 'zh_CN.UTF-8'
+      expect(isCjkLocale()).toBe(true)
+      process.env.LC_ALL = 'ko_KR.eucKR'
+      expect(isCjkLocale()).toBe(true)
+    })
+    it('leaves the ✓ glyph and plain ASCII narrow in a CJK locale', () => {
+      process.env.LANG = 'zh_CN.UTF-8'
+      expect(displayWidth('✓ab')).toBe(3)
+    })
+    it('fits lines within the pane in a CJK locale, including the ellipsis', () => {
+      process.env.LANG = 'ja_JP.UTF-8'
+      for (const w of [2, 3, 5, 9, 20]) {
+        expect(displayWidth(fitLine('  ■ 1. ▸▸▸ ← ◆◆◆◆ waiting for you ■■■', w))).toBeLessThanOrEqual(w)
+      }
+      expect(fitLine('abcdef', 1)).toBe('')
+    })
   })
 })
