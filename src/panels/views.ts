@@ -4,9 +4,12 @@ import { SessionRecord } from '../hooks/handle.js'
 import { color } from './color.js'
 import { fitLine } from './fit.js'
 
+const HINT = 'Starts when you ask Claude to build.'
+
 export function flowPanelLines(flow: FlowState | null, opts: { guards: boolean; idle: boolean | null; home?: boolean }): string[] {
   if (!flow) {
-    const empty = ['No flow yet.', 'Ask Claude to build', 'something to start one.']
+    // same names and markers as the live view, with the first step marked as next
+    const empty = ['hece · not started', '▸ Discussion', '  Plan', '  Build (in slices)', '  Review', '  Recap', '  Done', '', HINT]
     return opts.home ? [...empty, '', "Tip: you're in your home folder."] : empty
   }
   const lines = renderFlow(flow, { guards: opts.guards }).split('\n')
@@ -20,7 +23,7 @@ export function flowPanelLines(flow: FlowState | null, opts: { guards: boolean; 
 function selectFlowLines(lines: string[], height: number): string[] {
   const h = Math.max(0, height)
   if (lines.length <= h) return lines
-  const isFooter = (l: string) => l.startsWith('Claude:') || l.startsWith('guards:')
+  const isFooter = (l: string) => l.startsWith('Claude:') || l.startsWith('guards:') || l === HINT
   let footerStart = lines.length
   while (footerStart > 0 && isFooter(lines[footerStart - 1])) footerStart--
   const body = (l: string, i: number) => i < footerStart && l.length > 0
@@ -54,7 +57,7 @@ export function colorFlowLine(line: string, source = line): string {
   if (t.startsWith('▸')) return color.boldYellow(line)
   if (t.startsWith('✓')) return color.green(line)
   if (source.startsWith('hece')) return color.bold(line)
-  if (source.startsWith('guards:') || source.startsWith('Claude:')) return color.dim(line)
+  if (source.startsWith('guards:') || source.startsWith('Claude:') || source === HINT) return color.dim(line)
   return line
 }
 

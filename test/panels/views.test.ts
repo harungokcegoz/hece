@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { emptyFlow } from '../../src/flow/types.js'
 import { setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.js'
 import { fitLine, fitLines, displayWidth, charWidth, isCjkLocale } from '../../src/panels/fit.js'
-import { stripAnsi } from '../../src/panels/color.js'
+import { stripAnsi, color } from '../../src/panels/color.js'
 import { flowPanelLines, colorFlowLine, sessionsPanelLines, fitFlowLines, paintFlowLines } from '../../src/panels/views.js'
 
 // Ambiguous width depends on the locale, so every test here starts from a non-CJK one.
@@ -58,15 +58,34 @@ describe('display width', () => {
 })
 
 describe('flowPanelLines', () => {
-  it('explains what to do when there is no flow yet', () => {
-    expect(flowPanelLines(null, { guards: true, idle: null })).toEqual(['No flow yet.', 'Ask Claude to build', 'something to start one.'])
-    expect(flowPanelLines(null, { guards: true, idle: null, home: true })).toEqual([
-      'No flow yet.',
-      'Ask Claude to build',
-      'something to start one.',
-      '',
-      "Tip: you're in your home folder.",
-    ])
+  const OUTLINE = ['hece · not started', '▸ Discussion', '  Plan', '  Build (in slices)', '  Review', '  Recap', '  Done', '', 'Starts when you ask Claude to build.']
+  it('shows the framework outline with Discussion next when there is no flow yet', () => {
+    expect(flowPanelLines(null, { guards: true, idle: null })).toEqual(OUTLINE)
+    expect(flowPanelLines(null, { guards: true, idle: null, home: true })).toEqual([...OUTLINE, '', "Tip: you're in your home folder."])
+  })
+  it('uses the live view phase names and markers', () => {
+    const live = flowPanelLines({ ...emptyFlow(), phase: 'discuss' }, { guards: true, idle: null })
+    for (const row of ['▸ Discussion', '  Plan', '  Review', '  Recap']) expect(live.some((l) => l.startsWith(row))).toBe(true)
+    expect(flowPanelLines(null, { guards: true, idle: null }).slice(1, 3)).toEqual(['▸ Discussion', '  Plan'])
+  })
+  it('colours the empty outline like the live view and fits narrow panes', () => {
+    const lines = flowPanelLines(null, { guards: true, idle: null })
+    for (const w of [40, 20, 12, 6]) {
+      const out = paintFlowLines(lines, w, 100)
+      expect(out).toHaveLength(lines.length)
+      out.forEach((l) => expect(displayWidth(stripAnsi(l))).toBeLessThanOrEqual(w))
+      expect(out[0]).toBe(color.bold(fitLine(lines[0], w)))
+      expect(out[1]).toBe(color.boldYellow(fitLine(lines[1], w)))
+      expect(out[2]).toBe(fitLine(lines[2], w))
+      expect(out[8]).toBe(color.dim(fitLine(lines[8], w)))
+    }
+    expect(stripAnsi(paintFlowLines(lines, 40, 100)[8])).toBe('Starts when you ask Claude to build.')
+  })
+  it('keeps the next step and the hint in a short pane', () => {
+    const lines = flowPanelLines(null, { guards: true, idle: null })
+    expect(fitFlowLines(lines, 40, 2)).toEqual(['▸ Discussion', 'Starts when you ask Claude to build.'])
+    expect(fitFlowLines(lines, 40, 1)).toEqual(['▸ Discussion'])
+    expect(fitFlowLines(lines, 40, 3)).toEqual(['hece · not started', '▸ Discussion', 'Starts when you ask Claude to build.'])
   })
   it('shows the flow, whether Claude is waiting, and the guards', () => {
     let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)

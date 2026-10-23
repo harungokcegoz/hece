@@ -127,7 +127,11 @@ export function panelFrame(
 
   const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height))
   if (view.length === 0) {
-    return clamp(fitLines(["Nothing yet. Claude's steps", 'show up here in plain words.'], width, height, 'top').map((l) => color.dim(l)))
+    // no flow: say why it is empty; a flow with no events yet keeps the original message
+    const empty = flow
+      ? ["Nothing yet. Claude's steps", 'show up here in plain words.']
+      : ["hece tracks Claude's steps once", 'a flow begins.']
+    return clamp(fitLines(empty, width, height, 'top').map((l) => color.dim(l)))
   }
   const paint = { header: color.boldCyan, note: color.yellow, action: (s: string) => s, alert: color.red, milestone: color.green }
   return clamp(view.map((v) => paint[v.kind](fitLine(v.text, width))))
