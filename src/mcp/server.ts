@@ -3,6 +3,7 @@ import path from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { statePaths } from '../state/paths.js'
+import { withDirLock } from '../util/dirlock.js'
 import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
 import * as flow from '../flow/flow.js'
@@ -36,7 +37,7 @@ export function cleanNote(text: string): string {
     .trim()
 }
 
-export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?: () => number }): McpServer {
+export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?: () => number; lockTimeoutMs?: number }): McpServer {
   const now = opts.now ?? Date.now
   const paths = statePaths(opts.root)
   const server = new McpServer({ name: 'hece', version: '0.1.0' })
@@ -56,13 +57,20 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
     if (!ignored) fs.appendFileSync(file, (text === '' || text.endsWith('\n') ? '' : '\n') + 'state/\n')
   }
 
+  // Read, change and write flow.json under one lock next to it (the hook takes the same one), so neither side
+  // overwrites the other's update. A lock that stays busy is reported to the agent, never skipped silently.
   const mutate = (tool: string, fn: (s: FlowState) => FlowState, extra: Record<string, unknown> = {}): ToolResult => {
     try {
-      const next = fn(load())
-      ensureGitignore()
-      writeJsonAtomic(paths.flow, next)
-      appendEvent(paths.events, { at: now(), event: 'flow', tool, ...extra })
-      return ok(renderFlow(next, { guards: prefs().prefs.guards }))
+      fs.mkdirSync(paths.stateDir, { recursive: true })
+      const r = withDirLock(paths.flowLock, () => {
+        const next = fn(load())
+        ensureGitignore()
+        writeJsonAtomic(paths.flow, next)
+        appendEvent(paths.events, { at: now(), event: 'flow', tool, ...extra })
+        return next
+      }, { timeoutMs: opts.lockTimeoutMs })
+      if (!r.ran) return fail('hece: flow.json is busy (another hece process is writing it); nothing was changed, try again')
+      return ok(renderFlow(r.value, { guards: prefs().prefs.guards }))
     } catch (err) {
       return fail((err as Error).message)
     }
