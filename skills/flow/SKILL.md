@@ -1,6 +1,6 @@
 ---
 name: flow
-description: Use when the user wants to build something with hece, says "hece", or a hece flow is already in progress (flow_get shows a phase other than idle). Runs discuss → plan → build in small slices with a stop after each, then review and recap, keeping the user in the loop.
+description: Use when the user wants to build, design or brainstorm something with hece, says "hece", the session was started by hece (the hook says so), or a hece flow is already in progress (flow_get shows a phase other than idle). Runs discuss → plan → build in small slices with a stop after each, then review and recap, keeping the user in the loop.
 ---
 
 # hece flow
@@ -21,7 +21,7 @@ Call `flow_set_phase` whenever the phase changes. `hece status` (and hece's pane
 
 ### discuss
 - Calling `flow_set_phase(discuss)` starts a fresh flow; do it at the start of every new feature.
-- Use superpowers:brainstorming for the conversation, with hece pacing:
+- Use superpowers:brainstorming for the conversation, inside this phase and not instead of it (call `flow_set_phase(discuss)` first, then brainstorm), with hece pacing:
   - **One decision per turn.** Never stack questions or options.
   - `discussion.first: me`: ask for the user's idea before offering yours. `agent`: offer yours first.
   - Push back with one concrete reason when an idea is weak. `pushback: gentle` means suggest an alternative. `direct` means say plainly that it's a bad idea and why.

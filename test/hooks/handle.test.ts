@@ -28,6 +28,37 @@ describe('handleHook', () => {
     expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
   })
 
+  describe('hece session marker without a flow', () => {
+    const start = { hook_event_name: 'SessionStart', session_id: 's1', source: 'startup' }
+    const marked = () => ({ ...ctx(), heceSession: true })
+
+    it('tells Claude hece is active, and writes nothing', () => {
+      const r = handleHook(start, marked())
+      const out = JSON.parse(r.stdout).hookSpecificOutput
+      expect(out.hookEventName).toBe('SessionStart')
+      expect(out.additionalContext).toContain('hece session')
+      expect(out.additionalContext).toContain('flow_set_phase')
+      expect(out.additionalContext).toContain('discuss')
+      expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
+    })
+
+    it('stays silent without the marker', () => {
+      expect(handleHook(start, ctx())).toEqual({ stdout: '' })
+      expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
+    })
+
+    it('stays silent for other events even when marked', () => {
+      expect(handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write', session_id: 's1' }, marked())).toEqual({ stdout: '' })
+      expect(fs.existsSync(statePaths(root).heceDir)).toBe(false)
+    })
+
+    it('behaves as before when a flow exists', () => {
+      seedFlow(root, emptyFlow())
+      expect(handleHook(start, marked())).toEqual({ stdout: '' })
+      expect(readJson(statePaths(root).sessions, [])).toEqual([{ sessionId: 's1', source: 'startup', at: 100 }])
+    })
+  })
+
   it('records sessions and prefs errors on SessionStart', () => {
     seedFlow(root, emptyFlow())
     handleHook({ hook_event_name: 'SessionStart', session_id: 's1', source: 'startup' }, { ...ctx(), prefsErrors: ['bad key'] })

@@ -36,7 +36,7 @@ export async function runHook(): Promise<void> {
     if (process.env.HECE_CAPTURE === '1') capture(root, text, payload)
     const { prefs, errors } = loadPrefs(process.env, root)
     const configDir = path.dirname(prefsFiles(process.env, root).global)
-    const res = handleHook(payload, { root, configDir, prefs, prefsErrors: errors, now: Date.now() })
+    const res = handleHook(payload, { root, configDir, prefs, prefsErrors: errors, now: Date.now(), heceSession: process.env.HECE_SESSION === '1' })
     if (res.stdout) process.stdout.write(res.stdout)
   } catch (err) {
     const message = (err as Error)?.message ?? String(err)
