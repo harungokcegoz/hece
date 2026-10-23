@@ -30,7 +30,7 @@ describe('frameDecision', () => {
   })
   it('says how to get to the open window', () => {
     expect(alreadyOpenMessage('hece-abc')).toBe(
-      "hece: this project's window is already open. Switch to it with: tmux -L hece-abc attach -t =hece-abc\n",
+      "hece: this project's window is already open. Switch to it from a new terminal tab (tmux will not attach from inside tmux) with: TMUX= tmux -L hece-abc attach -t =hece-abc\n",
     )
   })
   it('falls back with a hint when tmux is missing', () => {
@@ -188,9 +188,28 @@ describe('openFrame', () => {
     expect(calls.at(-1)![0]).toBe('ATTACH')
   })
 
+  it('says the claude args were ignored when reattaching with args', () => {
+    const { deps, errs } = fake({ existing: true })
+    openFrame(opts, deps)
+    expect(errs).toEqual(['hece: this project\'s window is already open, so the claude arguments you gave were ignored.\n'])
+  })
+
+  it('stays silent when reattaching without args', () => {
+    const { deps, errs } = fake({ existing: true })
+    openFrame({ ...opts, claudeArgv: [] }, deps)
+    expect(errs).toEqual([])
+  })
+
+  it('says the args were ignored when a parallel launch won the race too', () => {
+    const { deps, errs } = fake({ newSessionFails: true, hasAfterFail: true })
+    openFrame(opts, deps)
+    expect(errs).toHaveLength(1)
+    expect(errs[0]).toContain('arguments you gave were ignored')
+  })
+
   it('attaches when a parallel launch won the race for the session', () => {
     const { calls, deps, errs } = fake({ newSessionFails: true, hasAfterFail: true })
-    expect(openFrame(opts, deps)).toBe(0)
+    expect(openFrame({ ...opts, claudeArgv: [] }, deps)).toBe(0)
     expect(calls.some((c) => c.includes('split-window'))).toBe(false)
     expect(calls.at(-1)![0]).toBe('ATTACH')
     expect(errs).toEqual([])

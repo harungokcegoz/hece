@@ -87,7 +87,7 @@ export function homeNote(root: string, home: string): string {
 }
 
 export function alreadyOpenMessage(name: string): string {
-  return `hece: this project's window is already open. Switch to it with: tmux -L ${name} attach -t =${name}\n`
+  return `hece: this project's window is already open. Switch to it from a new terminal tab (tmux will not attach from inside tmux) with: TMUX= tmux -L ${name} attach -t =${name}\n`
 }
 
 /**
@@ -121,7 +121,11 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
   const t = (...args: string[]) => deps.tmux(['-L', name, '-f', '/dev/null', '-u', ...args])
   const attach = () => deps.attach(['-L', name, '-f', '/dev/null', '-u', 'attach', '-t', exact])
   const hasSession = () => t('has-session', '-t', exact).status === 0
-  if (hasSession()) return attach()
+  const reattach = () => {
+    if (o.claudeArgv.length > 0) err("hece: this project's window is already open, so the claude arguments you gave were ignored.\n")
+    return attach()
+  }
+  if (hasSession()) return reattach()
 
   const q = (args: string[]) => args.map(shellQuote).join(' ')
   // when Claude exits, the whole window closes (the pane-exited hook below is the backstop).
@@ -144,7 +148,7 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
   const created = t('new-session', '-d', '-s', name, '-c', cwd, '-x', '200', '-y', '50', '-P', '-F', '#{pane_id}', ...middle)
   if (created.status !== 0) {
     // a parallel launch may have started the window between our check and now
-    if (hasSession()) return attach()
+    if (hasSession()) return reattach()
     err(`hece: could not start tmux (${created.stderr.trim() || `exit ${created.status}`})\n`)
     return 1
   }
