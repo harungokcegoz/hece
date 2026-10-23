@@ -1,0 +1,31 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Build the release archive and check it runs unpacked
+        run: HECE_RELEASE_TEST=1 npm run test -- test/release
+      - run: npm run release:archive
+      - name: Attach the archive to a GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/hece-*.tgz \
+            --title "$GITHUB_REF_NAME" --generate-notes
