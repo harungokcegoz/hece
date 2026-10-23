@@ -66,6 +66,17 @@ hece mcp           ── the agent reports progress: phases, decisions, slices
 
 ## Quick start
 
+Download `hece-<version>.tgz` from the [latest release](https://github.com/harungokcegoz/hece/releases/latest). It already contains the compiled CLI and its dependencies, so there is nothing to install or build. Unpack it and point Claude Code at the folder:
+
+```bash
+tar -xzf hece-<version>.tgz        # creates ./hece
+claude --plugin-dir ./hece
+```
+
+For the `hece` command (panels and the window), run `npm link` inside the unpacked folder.
+
+**From source:**
+
 ```bash
 git clone https://github.com/harungokcegoz/hece.git
 cd hece && npm install && npm run build && npm link
