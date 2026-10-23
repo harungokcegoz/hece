@@ -78,7 +78,8 @@ describe('hece panel --once', () => {
 
   it('flow panel explains an empty project', () => {
     const r = panel(tmpProject(), 'flow')
-    expect(r.text).toContain('No flow yet.')
+    expect(r.text).toContain('▸ Discussion')
+    expect(r.text).toContain('Build (in slices)')
     expect(r.text).not.toContain('home folder')
     expect(r.text).not.toMatch(/^hece$/m)
   })
@@ -91,11 +92,22 @@ describe('hece panel --once', () => {
 
   it('panels do not repeat the name the tmux border already shows', () => {
     const root = tmpProject()
-    expect(panel(root, 'activity').text.split('\n')[0]).toBe("Nothing yet. Claude's steps")
+    expect(panel(root, 'activity').text.split('\n')[0]).toBe("hece tracks Claude's steps once")
     expect(panel(root, 'sessions').text.split('\n')[0]).toBe('none yet')
     fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
     fs.writeFileSync(statePaths(root).flow, '{oops')
     expect(panel(root, 'activity').text.split('\n')[0]).toContain('flow.json is unreadable')
+  })
+
+  it('activity panel says why it is empty: no flow vs a flow with no events yet', () => {
+    const none = panel(tmpProject(), 'activity').text
+    expect(none).toContain('a flow begins.')
+    expect(none).not.toContain('Nothing yet')
+    const root = tmpProject()
+    seedFlow(root, { ...emptyFlow(), phase: 'discuss' })
+    const started = panel(root, 'activity').text
+    expect(started).toContain("Nothing yet. Claude's steps")
+    expect(started).not.toContain('a flow begins.')
   })
 
   it('activity panel speaks plain language and hides raw commands', () => {
@@ -123,7 +135,7 @@ describe('hece panel --once', () => {
     expect(r.status).toBe(0)
     expect(r.text).toContain('⚠')
     expect(r.text).toContain('flow.json is unreadable')
-    expect(r.text).not.toContain('No flow yet')
+    expect(r.text).not.toContain('Discussion')
     expect(r.text).not.toContain(root)
   })
 
