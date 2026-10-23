@@ -17,6 +17,8 @@ export interface FrameOptions {
   tmuxBin: string
   /** terminal width; 0 means unknown, keep both panels */
   columns: number
+  /** in the home folder: keep the home-folder note in the status line */
+  homeNote?: boolean
 }
 
 export interface FrameDeps {
@@ -90,6 +92,14 @@ export function alreadyOpenMessage(name: string): string {
   return `hece: this project's window is already open. Switch to it from a new terminal tab (tmux will not attach from inside tmux) with: TMUX= tmux -L ${name} attach -t =${name}\n`
 }
 
+const HOME_STATUS = ' hece · home folder: flow state goes in ~/.hece, run hece in a project for a per-project flow '
+
+/** True for a terminal session of Claude itself: not piped, print/info mode or a Claude subcommand. */
+export function interactiveClaude(argv: string[], o: { stdinTTY: boolean; stdoutTTY: boolean }): boolean {
+  if (!o.stdinTTY || !o.stdoutTTY || argv.some((a) => PLAIN_FLAGS.has(a))) return false
+  return !(argv[0] !== undefined && CLAUDE_SUBCOMMANDS.has(argv[0]))
+}
+
 /**
  * Inside tmux, hece does not nest a window. Plain mode is right unless this project's window is already
  * open: then a second Claude would run in the same project, so the user is pointed to the first one.
@@ -106,8 +116,7 @@ export function frameDecision(
     windowOpen?: boolean
   },
 ): 'frame' | 'plain' | 'plain-no-tmux' | 'plain-not-built' | 'already-open' {
-  if (!o.stdinTTY || !o.stdoutTTY || argv.some((a) => PLAIN_FLAGS.has(a))) return 'plain'
-  if (argv[0] !== undefined && CLAUDE_SUBCOMMANDS.has(argv[0])) return 'plain'
+  if (!interactiveClaude(argv, o)) return 'plain'
   if (o.env.TMUX) return o.windowOpen ? 'already-open' : 'plain'
   if (!o.cliBuilt) return 'plain-not-built'
   return o.tmuxAvailable ? 'frame' : 'plain-no-tmux'
@@ -174,7 +183,8 @@ export function openFrame(o: FrameOptions, deps: FrameDeps): number {
     ['mouse', 'on'],
     ['escape-time', '10'],
     ['status-style', 'bg=colour236,fg=white'],
-    ['status-left', ' hece '],
+    ['status-left', o.homeNote ? HOME_STATUS : ' hece '],
+    ...(o.homeNote ? [['status-left-length', '120']] : []),
     ['status-right', ' F1 left · F2 claude · F3 right · click a pane to focus '],
     ['status-right-length', '80'],
     ['pane-border-status', 'top'],
@@ -323,10 +333,13 @@ export async function runFrame(argv: string[]): Promise<void> {
     process.exitCode = 1
     return
   }
-  if (decision === 'plain') return runLaunch(argv)
   const printHomeNote = () => {
     const note = homeNote(resolveRoot(env), homeDir(env))
     if (note) process.stderr.write(note)
+  }
+  if (decision === 'plain') {
+    if (interactiveClaude(argv, { stdinTTY: Boolean(process.stdin.isTTY), stdoutTTY: Boolean(process.stdout.isTTY) })) printHomeNote()
+    return runLaunch(argv)
   }
   if (decision === 'plain-not-built') {
     printHomeNote()
@@ -342,7 +355,7 @@ export async function runFrame(argv: string[]): Promise<void> {
   printHomeNote()
   const { prefs } = loadPrefs(env, root)
   process.exitCode = openFrame(
-    { root, claudeArgv: argv, layout: prefs.layout, node: nodeForFrame(env), cli, tmuxBin, columns: process.stdout.columns ?? 0 },
+    { root, claudeArgv: argv, layout: prefs.layout, node: nodeForFrame(env), cli, tmuxBin, columns: process.stdout.columns ?? 0, homeNote: Boolean(homeNote(root, homeDir(env))) },
     {
       tmux: (args) => {
         const r = spawnSync(tmuxBin, args, { encoding: 'utf8' })
