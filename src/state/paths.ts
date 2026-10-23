@@ -7,6 +7,7 @@ export interface StatePaths {
   heceDir: string
   stateDir: string
   flow: string
+  flowLock: string
   events: string
   sessions: string
   agent: string
@@ -55,6 +56,7 @@ export function statePaths(root: string): StatePaths {
     heceDir,
     stateDir,
     flow: path.join(stateDir, 'flow.json'),
+    flowLock: path.join(stateDir, 'flow.json.lock'),
     events: path.join(stateDir, 'events.jsonl'),
     sessions: path.join(stateDir, 'sessions.json'),
     agent: path.join(stateDir, 'agent.json'),

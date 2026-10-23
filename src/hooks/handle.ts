@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import { statePaths } from '../state/paths.js'
 import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
 import { FlowState, emptyFlow } from '../flow/types.js'
+import { withDirLock } from '../util/dirlock.js'
 import { renderFlow } from '../flow/render.js'
 import { approve, requestRedo, clearCheckPending } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
@@ -25,6 +26,8 @@ export interface HookContext {
   prefs: Prefs
   prefsErrors: string[]
   now: number
+  /** how long to wait for the flow.json lock (tests shorten it) */
+  lockTimeoutMs?: number
 }
 
 export interface SessionRecord {
@@ -73,13 +76,16 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     }),
   })
 
-  let flow: FlowState
-  try {
+  const loadFlow = (): FlowState => {
     const raw: unknown = readJson<unknown>(paths.flow, emptyFlow())
     if (raw === null || typeof raw !== 'object' || typeof (raw as { phase?: unknown }).phase !== 'string') {
       throw new Error(`hece: ${paths.flow} is not a hece flow`)
     }
-    flow = raw as FlowState
+    return raw as FlowState
+  }
+  let flow: FlowState
+  try {
+    flow = loadFlow()
   } catch (err) {
     // an unreadable flow must not silently switch the guards off
     ev('hook_error', { message: (err as Error).message })
@@ -104,9 +110,28 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
   }
   const forkIds = new Set(sessions.filter(s => s.source === 'fork').map(s => s.sessionId))
   if (p.hook_event_name === 'SessionStart' && p.source === 'fork' && hasSessionId(p.session_id)) forkIds.add(p.session_id)
+  // Every read-modify-write of flow.json runs under one lock next to it and starts from what is on disk now,
+  // so a concurrent MCP write is never overwritten with an older copy. `flow` is refreshed inside the lock.
+  // When the lock cannot be had, the change is not made: the event says so and the caller reports it.
+  const updateFlow = (change: () => FlowState | null): { ran: boolean; wrote: boolean } => {
+    const r = withDirLock(paths.flowLock, () => {
+      flow = loadFlow()
+      const next = change()
+      if (next === null) return false
+      flow = next
+      writeJsonAtomic(paths.flow, flow)
+      return true
+    }, { timeoutMs: ctx.lockTimeoutMs })
+    if (!r.ran) ev('hook_error', { message: 'hece: flow.json is busy; the change was not recorded' })
+    return { ran: r.ran, wrote: r.ran && r.value }
+  }
+  const notRecorded = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', what: string) => ({
+    stdout: JSON.stringify({
+      hookSpecificOutput: { hookEventName, additionalContext: `hece: could not record ${what} (flow.json is busy); ask the user to answer again` },
+    }),
+  })
   const bindMain = (id: string) => {
-    flow = { ...flow, mainSessionId: id }
-    writeJsonAtomic(paths.flow, flow)
+    updateFlow(() => (hasSessionId(flow.mainSessionId) ? null : { ...flow, mainSessionId: id }))
   }
   const bindRecordedMain = () => {
     if (!sessionsReadable || hasSessionId(flow.mainSessionId)) return
@@ -138,17 +163,21 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
   // The user's next answer in the main session belongs to the open check question: it is never an approval.
   const consumeCheckAnswer = (via: string): boolean => {
     if (!flow.checkPending || mainReason() !== null) return false
-    flow = clearCheckPending(flow, ctx.now)
-    writeJsonAtomic(paths.flow, flow)
-    ev('check_answered', { via })
+    const r = updateFlow(() => (flow.checkPending ? clearCheckPending(flow, ctx.now) : null))
+    if (r.wrote) ev('check_answered', { via })
     return true
   }
 
   const recordRedo = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
-    if (!fromMain(via)) return none
-    const { state, requested } = requestRedo(flow, ctx.now)
+    let requested = null as number | null
+    const r = updateFlow(() => {
+      if (!fromMain(via)) return null
+      const res = requestRedo(flow, ctx.now)
+      requested = res.requested
+      return res.requested === null ? null : res.state
+    })
+    if (!r.ran) return notRecorded(hookEventName, 'the redo request')
     if (requested === null) return none
-    writeJsonAtomic(paths.flow, state)
     ev('redo_requested', { n: requested, via })
     return {
       stdout: JSON.stringify({
@@ -158,10 +187,15 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
   }
 
   const recordApproval = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
-    if (!fromMain(via)) return none
-    const { state, approved } = approve(flow, ctx.now)
+    let approved = null as ReturnType<typeof approve>['approved']
+    const r = updateFlow(() => {
+      if (!fromMain(via)) return null
+      const res = approve(flow, ctx.now)
+      approved = res.approved
+      return res.approved ? res.state : null
+    })
+    if (!r.ran) return notRecorded(hookEventName, 'the approval')
     if (!approved) return none
-    writeJsonAtomic(paths.flow, state)
     const text = approved.what === 'plan' ? 'hece: the user approved the plan' : `hece: the user approved slice ${approved.n}`
     ev('approved', { what: approved.what, n: approved.what === 'slice' ? approved.n : undefined, via })
     return { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: text } }) }
