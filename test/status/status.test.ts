@@ -17,7 +17,7 @@ describe('hece status', () => {
 
   it('finds the project .hece from a nested folder', () => {
     const root = fs.realpathSync(tmpProject())
-    seedFlow(root, setPhase(emptyFlow(), 'discuss', 1))
+    seedFlow(root, setPhase(emptyFlow(), 'discuss', { guards: false }, 1))
     const nested = path.join(root, 'src', 'deep')
     fs.mkdirSync(nested, { recursive: true })
     // the child runs from a folder outside the repo, so tsx must be resolved here
@@ -31,7 +31,7 @@ describe('hece status', () => {
 
   it('prints the flow and warns about preference errors', () => {
     const root = tmpProject()
-    seedFlow(root, setPhase(emptyFlow(), 'discuss', 1))
+    seedFlow(root, setPhase(emptyFlow(), 'discuss', { guards: false }, 1))
     fs.writeFileSync(path.join(root, '.hece', 'preferences.yaml'), 'gaurds: off\n')
     const r = runCli(['status'], { root })
     expect(r.stdout).toContain('▸ Discussion (0 decisions)')

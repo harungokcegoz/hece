@@ -19,12 +19,12 @@ describe('renderFlow', () => {
   })
 
   it('renders a build in progress with a slice waiting for the user', () => {
-    let s = addDecision(setPhase(emptyFlow(), 'discuss', 1), { title: 'Auth', choice: 'JWT', why: 'x' }, 2)
+    let s = addDecision(setPhase(emptyFlow(), 'discuss', { guards: false }, 1), { title: 'Auth', choice: 'JWT', why: 'x' }, 2)
     s = setPlan(s, [
       { title: 'Token model', files: [], kind: 'teaching' },
       { title: 'Login endpoint', files: [], kind: 'routine' },
       { title: 'Refresh', files: [], kind: 'routine' },
-    ], 3)
+    ], { guards: false }, 3)
     s = approve(s, 4).state
     s = startSlice(s, 1, { guards: true }, 5)
     s = finishSlice(s, 1, { summary: 'a', connectsTo: 'b' }, 6)
@@ -48,13 +48,13 @@ describe('renderFlow', () => {
   })
 
   it('flags a changed plan waiting for approval', () => {
-    let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }], 1)
-    s = setPlan(s, [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], 2)
+    let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }], { guards: false }, 1)
+    s = setPlan(s, [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: false }, 2)
     expect(renderFlow(s, { guards: true })).toContain('▸ Plan (2 slices) — changed, waiting for approval')
   })
 
   it('shows review counts and marks everything done at the end', () => {
-    const s = { ...setPhase(emptyFlow(), 'done', 1), review: { important: 2, minor: 3, at: 1 } }
+    const s = { ...setPhase(emptyFlow(), 'done', { guards: false }, 1), review: { important: 2, minor: 3, at: 1 } }
     const out = renderFlow(s, { guards: true })
     expect(out).toContain('✓ Review (2 important, 3 minor)')
     expect(out).toContain('✓ Recap')
