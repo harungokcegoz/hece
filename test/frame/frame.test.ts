@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { frameName, alreadyOpenMessage, shellQuote, tmuxQuote, sidesFor, fitFrame, isHomeRoot, homeNote, frameDecision, openFrame, FrameDeps } from '../../src/frame/main.js'
+import { frameName, alreadyOpenMessage, shellQuote, tmuxQuote, sidesFor, fitFrame, isHomeRoot, homeNote, frameDecision, interactiveClaude, openFrame, FrameDeps } from '../../src/frame/main.js'
 
 const tty = { stdinTTY: true, stdoutTTY: true, env: {}, tmuxAvailable: true, cliBuilt: true }
 
@@ -92,6 +92,30 @@ describe('home folder', () => {
     expect(homeNote('/nope/a', '/nope/a')).toContain("you're in your home folder")
     expect(homeNote('/nope/a', '/nope/a')).toContain('~/.hece')
     expect(homeNote('/nope/a/p', '/nope/a')).toBe('')
+  })
+  it('counts plain mode as interactive only for a terminal session, not print, info or subcommands', () => {
+    const t = { stdinTTY: true, stdoutTTY: true }
+    expect(interactiveClaude([], t)).toBe(true)
+    expect(interactiveClaude(['-c'], t)).toBe(true)
+    expect(interactiveClaude([], { stdinTTY: false, stdoutTTY: true })).toBe(false)
+    expect(interactiveClaude([], { stdinTTY: true, stdoutTTY: false })).toBe(false)
+    expect(interactiveClaude(['-p', 'hi'], t)).toBe(false)
+    expect(interactiveClaude(['--version'], t)).toBe(false)
+    expect(interactiveClaude(['doctor'], t)).toBe(false)
+  })
+  it('shows the note in the window status line in window mode, so it stays visible', () => {
+    const { calls, deps } = fake()
+    openFrame({ ...opts, homeNote: true }, deps)
+    const left = calls.find((c) => c.includes('status-left'))!
+    expect(left.at(-1)).toContain('home folder')
+    expect(left.at(-1)).toContain('~/.hece')
+    expect(calls).toContainEqual([...pre0(), 'set', '-g', 'status-left-length', '120'])
+  })
+  it('keeps the plain status line outside the home folder', () => {
+    const { calls, deps } = fake()
+    openFrame(opts, deps)
+    expect(calls).toContainEqual([...pre0(), 'set', '-g', 'status-left', ' hece '])
+    expect(calls.some((c) => c.includes('status-left-length'))).toBe(false)
   })
 })
 
