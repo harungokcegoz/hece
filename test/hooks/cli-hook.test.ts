@@ -61,3 +61,16 @@ describe('hece hook (process)', () => {
     expect(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision).toBe('deny')
   })
 })
+
+describe('hece session marker (process)', () => {
+  const stdin = JSON.stringify({ hook_event_name: 'SessionStart', session_id: 's', source: 'startup' })
+  it('HECE_SESSION=1 with no flow prints context and writes nothing; unset is silent', () => {
+    const root = tmpProject()
+    const marked = runCli(['hook'], { root, stdin, env: { HECE_SESSION: '1' } })
+    expect(marked.status).toBe(0)
+    expect(JSON.parse(marked.stdout).hookSpecificOutput.additionalContext).toContain('hece session')
+    const plain = runCli(['hook'], { root, stdin, env: { HECE_SESSION: '' } })
+    expect(plain.stdout).toBe('')
+    expect(fs.existsSync(path.join(root, '.hece'))).toBe(false)
+  })
+})

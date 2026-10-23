@@ -17,7 +17,7 @@ beforeAll(() => {
   fs.writeFileSync(
     fake,
     `#!/usr/bin/env node
-require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')
+require('node:fs').writeFileSync(${JSON.stringify(marker)}, process.env.HECE_SESSION ?? 'unset')
 console.log(JSON.stringify(process.argv.slice(2)))
 process.exit(Number(process.env.FAKE_EXIT || 0))
 `,
@@ -87,6 +87,13 @@ describe('hece launch (process)', () => {
     const r = launch([], { HECE_CLAUDE_BIN: '/nonexistent/claude-bin' })
     expect(r.status).toBe(1)
     expect(r.stderr).toContain('could not find')
+  })
+
+  it('marks the Claude process as a hece session (the window runs this same path via --no-frame)', () => {
+    launch([], { HECE_SESSION: '' })
+    expect(fs.readFileSync(marker, 'utf8')).toBe('1')
+    launch(['--no-frame'])
+    expect(fs.readFileSync(marker, 'utf8')).toBe('1')
   })
 
   it('prints usage for help without running claude', () => {

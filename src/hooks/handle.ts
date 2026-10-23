@@ -28,6 +28,8 @@ export interface HookContext {
   now: number
   /** how long to wait for the flow.json lock (tests shorten it) */
   lockTimeoutMs?: number
+  /** Claude was launched by `hece` (HECE_SESSION=1): say so at session start even before a flow exists */
+  heceSession?: boolean
 }
 
 export interface SessionRecord {
@@ -35,6 +37,9 @@ export interface SessionRecord {
   source: string
   at: number
 }
+
+export const HECE_SESSION_CONTEXT =
+  'hece: this is a hece session. hece is active from the start: for any request to build, design or brainstorm something, use the hece flow skill and call flow_set_phase(discuss) to start the flow, even if the user does not say "hece". Use superpowers:brainstorming inside the discuss phase.'
 
 const MAX_SESSIONS = 50
 const PICKER_TOOL = 'AskUserQuestion'
@@ -64,7 +69,13 @@ export function summarizeTool(name: string, input?: Record<string, unknown>): st
 export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string } {
   const paths = statePaths(ctx.root)
   // hooks fire in every project once the plugin is installed; stay silent where no hece flow exists
-  if (!fs.existsSync(paths.flow)) return { stdout: '' }
+  if (!fs.existsSync(paths.flow)) {
+    // the one exception: a session hece launched is told hece is active. Nothing is written.
+    if (ctx.heceSession && p.hook_event_name === 'SessionStart') {
+      return { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: HECE_SESSION_CONTEXT } }) }
+    }
+    return { stdout: '' }
+  }
 
   const none = { stdout: '' }
   const ev = (event: string, extra: Record<string, unknown> = {}) =>
