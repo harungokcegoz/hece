@@ -21,7 +21,7 @@ const write = (file: string, text: string) => {
 describe('presets', () => {
   it('defaults to the Involved preset', () => {
     const p = resolvePrefs([]).prefs
-    expect(p).toMatchObject({ preset: 'involved', check_questions: 'off', flow_recap: false, guards: true })
+    expect(p).toMatchObject({ preset: 'involved', check_questions: 'off', flow_recap: false, guards: { stops: true, files: true } })
     expect(p.review).toEqual({ final: true, reviewer_model: 'opus', show_minor: false })
   })
   it('Learning turns on check questions, minor findings and the recap', () => {
@@ -46,17 +46,26 @@ describe('validation', () => {
   it('treats YAML on/off as booleans', () => {
     const { flat, errors } = validatePrefs({ guards: 'off', review: { final: 'on' } }, 'x')
     expect(errors).toEqual([])
-    expect(flat).toEqual({ guards: false, 'review.final': true })
+    expect(flat).toEqual({ 'guards.stops': false, 'guards.files': false, 'review.final': true })
+  })
+  it('legacy guards: off sets both switches', () => {
+    expect(validatePrefs({ guards: 'off' }, 'x')).toEqual({ flat: { 'guards.stops': false, 'guards.files': false }, errors: [] })
+    expect(resolvePrefs([{ raw: { guards: { files: false } }, source: 'g' }]).prefs.guards).toEqual({ stops: true, files: false })
+  })
+  it('rejects a junk legacy guards value and keeps both on', () => {
+    const r = resolvePrefs([{ raw: { guards: 'maybe' }, source: 'g' }])
+    expect(r.errors).toHaveLength(1)
+    expect(r.prefs.guards).toEqual({ stops: true, files: true })
   })
   it('rejects a typo key by name and keeps the safe default', () => {
     const { prefs, errors } = resolvePrefs([{ raw: { gaurds: false }, source: 'p.yaml' }])
     expect(errors).toEqual(['p.yaml: unknown key "gaurds"'])
-    expect(prefs.guards).toBe(true)
+    expect(prefs.guards).toEqual({ stops: true, files: true })
   })
   it.each(['constructor', 'toString', 'hasOwnProperty'])('treats inherited object key "%s" as unknown', key => {
     const { prefs, errors } = resolvePrefs([{ raw: { [key]: 'x' }, source: 'p.yaml' }])
     expect(errors).toEqual([`p.yaml: unknown key "${key}"`])
-    expect(prefs.guards).toBe(true)
+    expect(prefs.guards).toEqual({ stops: true, files: true })
   })
   it('treats an inherited key inside a group as unknown', () => {
     const { errors } = validatePrefs({ slice_stop: { constructor: 'x' } }, 'p.yaml')
@@ -98,7 +107,7 @@ describe('loadPrefs', () => {
     write(files.project, 'guards: on\n')
     const { prefs, errors } = loadPrefs({}, root, home)
     expect(errors).toEqual([])
-    expect(prefs.guards).toBe(true)
+    expect(prefs.guards).toEqual({ stops: true, files: true })
     expect(prefs.slice_stop.depth).toBe('detailed')
   })
   it('honours XDG_CONFIG_HOME', () => {
@@ -110,7 +119,7 @@ describe('loadPrefs', () => {
     const { prefs, errors } = loadPrefs({}, root, home)
     expect(errors[0]).toContain(files.project)
     expect(errors[0]).toContain('invalid YAML')
-    expect(prefs.guards).toBe(true)
+    expect(prefs.guards).toEqual({ stops: true, files: true })
   })
   it('works with no files at all', () => {
     expect(loadPrefs({}, root, home)).toEqual({ prefs: presetDefaults('involved'), errors: [] })

@@ -15,7 +15,7 @@ export interface Prefs {
   layout: { left: Widget; right: Widget }
   delegate: { orchestrator: string; build: string; review: string }
   effort: { orchestrator: string; build: string; review: string }
-  guards: boolean
+  guards: { stops: boolean; files: boolean }
   optimize: 'ponytail' | 'caveman'
 }
 
@@ -32,7 +32,7 @@ const INVOLVED: Prefs = {
   layout: { left: 'activity', right: 'flow' },
   delegate: { orchestrator: 'default', build: 'sonnet', review: 'opus' },
   effort: { orchestrator: 'default', build: 'medium', review: 'high' },
-  guards: true,
+  guards: { stops: true, files: true },
   optimize: 'ponytail',
 }
 
@@ -75,7 +75,8 @@ const RULES: Record<string, Rule> = {
   'effort.orchestrator': e('default', ...VENDORS.claude.efforts),
   'effort.build': e(...VENDORS.claude.efforts),
   'effort.review': e(...VENDORS.claude.efforts),
-  guards: BOOL,
+  'guards.stops': BOOL,
+  'guards.files': BOOL,
   optimize: e('ponytail', 'caveman'),
 }
 
@@ -107,6 +108,13 @@ export function validatePrefs(raw: unknown, source: string): { flat: Record<stri
   const walk = (obj: Record<string, unknown>, prefix: string) => {
     for (const [k, v] of Object.entries(obj)) {
       const key = prefix ? `${prefix}.${k}` : k
+      // legacy `guards: on|off` switches both guards
+      if (key === 'guards' && (v === null || typeof v !== 'object' || Array.isArray(v))) {
+        const r = check(BOOL, v)
+        if (r.ok) flat['guards.stops'] = flat['guards.files'] = r.value
+        else errors.push(`${source}: "${key}" is ${JSON.stringify(v)}; allowed: ${r.allowed}`)
+        continue
+      }
       const rule = Object.hasOwn(RULES, key) ? RULES[key] : undefined
       if (!rule) {
         const isGroup = Object.keys(RULES).some((r) => r.startsWith(key + '.'))

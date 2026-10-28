@@ -203,7 +203,7 @@ describe('handleHook', () => {
     fs.mkdirSync(statePaths(root).stateDir, { recursive: true })
     fs.writeFileSync(statePaths(root).flow, '{oops')
     expect(handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }, ctx()).stdout).toBe('')
-    const off = { ...ctx(), prefs: { ...prefs, guards: false } }
+    const off = { ...ctx(), prefs: { ...prefs, guards: { stops: false, files: false } } }
     expect(handleHook({ hook_event_name: 'PreToolUse', tool_name: 'Write' }, off).stdout).toBe('')
   })
 

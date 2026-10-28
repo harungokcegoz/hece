@@ -9,7 +9,7 @@ import { decideTool, isContinueIntent, isRedoIntent, parseRedo, pickerMode, pick
 
 const on = presetDefaults('involved')
 const protect = { root: '/proj', configDir: '/home/u/.config/hece' }
-const off = { ...on, guards: false }
+const off = { ...on, guards: { stops: false, files: false } }
 const plan = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
 const approved = approve(plan, 2).state
 const working = startSlice(approved, 1, { guards: true }, 3)
@@ -56,6 +56,21 @@ describe('decideTool', () => {
   })
   it('allows everything when guards are off', () => {
     expect(decideTool(stopped, off, { name: 'Write' }, protect)).toEqual({ allow: true })
+  })
+})
+
+describe('split guards', () => {
+  const discuss = setPhase(emptyFlow(), 'discuss', { guards: true }, 1)
+  const filesOnly = { ...on, guards: { stops: false, files: true } }
+  const stopsOnly = { ...on, guards: { stops: true, files: false } }
+  const edit = (p: string) => ({ name: 'Edit', input: { file_path: p } })
+  it('files guard alone blocks .hece edits but not code edits during discuss', () => {
+    expect(decideTool(discuss, filesOnly, edit('/proj/.hece/preferences.yaml'), protect).allow).toBe(false)
+    expect(decideTool(discuss, filesOnly, edit('/proj/src/a.ts'), protect)).toEqual({ allow: true })
+  })
+  it('stops guard alone blocks code edits in discuss but allows .hece edits', () => {
+    expect(decideTool(discuss, stopsOnly, edit('/proj/src/a.ts'), protect).allow).toBe(false)
+    expect(decideTool(emptyFlow(), stopsOnly, edit('/proj/.hece/preferences.yaml'), protect)).toEqual({ allow: true })
   })
 })
 

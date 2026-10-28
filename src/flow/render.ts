@@ -1,4 +1,5 @@
 import { batchRunning } from './flow.js'
+import type { Prefs } from '../prefs/schema.js'
 import { FlowState, PHASES, SliceStatus } from './types.js'
 
 const STEPS = [
@@ -13,7 +14,7 @@ const SLICE_MARK: Record<SliceStatus, string> = { approved: '✓', working: '▸
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 
-export function renderFlow(s: FlowState, opts: { guards: boolean }): string {
+export function renderFlow(s: FlowState, opts: { guards: Prefs['guards'] }): string {
   const cur = PHASES.indexOf(s.phase)
   const mark = (id: string) => {
     const i = PHASES.indexOf(id as FlowState['phase'])
@@ -36,6 +37,6 @@ export function renderFlow(s: FlowState, opts: { guards: boolean }): string {
       }
     }
   }
-  lines.push(`guards: ${opts.guards ? 'on' : 'off'}`)
+  lines.push(`guards: ${opts.guards.stops && opts.guards.files ? 'on' : opts.guards.stops || opts.guards.files ? 'partial' : 'off'}`)
   return lines.join('\n')
 }

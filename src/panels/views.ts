@@ -1,3 +1,4 @@
+import type { Prefs } from '../prefs/schema.js'
 import { FlowState, PHASES } from '../flow/types.js'
 import { renderFlow } from '../flow/render.js'
 import { SessionRecord } from '../hooks/handle.js'
@@ -6,7 +7,7 @@ import { fitLine } from './fit.js'
 
 const HINT = 'Starts when you ask Claude to build.'
 
-export function flowPanelLines(flow: FlowState | null, opts: { guards: boolean; idle: boolean | null; home?: boolean }): string[] {
+export function flowPanelLines(flow: FlowState | null, opts: { guards: Prefs['guards']; idle: boolean | null; home?: boolean }): string[] {
   if (!flow) {
     // same names and markers as the live view, with the first step marked as next
     const empty = ['hece · not started', '▸ Discussion', '  Plan', '  Build (in slices)', '  Review', '  Recap', '  Done', '', HINT]
