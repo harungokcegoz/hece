@@ -13,7 +13,7 @@ export function prefsFiles(env: NodeJS.ProcessEnv, root: string, home: string = 
   }
 }
 
-function readYaml(file: string): { raw: unknown; error?: string } {
+export function readYaml(file: string): { raw: unknown; error?: string } {
   let text: string
   try {
     text = fs.readFileSync(file, 'utf8')

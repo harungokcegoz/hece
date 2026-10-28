@@ -24,11 +24,11 @@ export function readJson<T>(file: string, fallback: T): T {
   }
 }
 
-export function writeJsonAtomic(file: string, value: unknown): void {
+export function writeFileAtomic(file: string, text: string): void {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
   try {
-    fs.writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n')
+    fs.writeFileSync(tmp, text)
     fs.renameSync(tmp, file)
   } catch (err) {
     try {
@@ -38,6 +38,10 @@ export function writeJsonAtomic(file: string, value: unknown): void {
     }
     throw err
   }
+}
+
+export function writeJsonAtomic(file: string, value: unknown): void {
+  writeFileAtomic(file, JSON.stringify(value, null, 2) + '\n')
 }
 
 export function appendEvent(file: string, ev: HeceEvent): void {
