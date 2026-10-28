@@ -32,7 +32,8 @@ describe('skills', () => {
 
   it('flow states that hece pacing wins over superpowers handoffs', () => {
     expect(read('flow')).toContain("hece's pacing wins")
-    expect(read('flow')).toContain('dispatch exactly one slice at a time')
+    for (const s of ['One by one', 'Parallel', 'optimize', 'ponytail:ponytail', 'caveman:caveman', 'hece:communicate wins', 'the user approved slices'])
+      expect(read('flow')).toContain(s)
   })
 
   it('flow tells the agent how the user approves and redoes', () => {

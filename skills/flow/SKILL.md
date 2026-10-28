@@ -11,8 +11,11 @@ You are the orchestrator. The goal is a feature the user **understands**: they c
 
 1. Call `prefs_get` and `flow_get`. Follow the preferences exactly. If `errors` is not empty, tell the user in one line per error.
 2. hece builds on superpowers. If superpowers skills are unavailable, say so in one line, with the install command `/plugin install superpowers@claude-plugins-official`, and stop.
-3. Every message you write follows hece:communicate.
-4. hece's pacing wins. Where a superpowers skill's own next-step prompts, execution handoffs or continuous task loops conflict with this skill, follow this skill: do not offer superpowers' execution-choice prompt, dispatch exactly one slice at a time, and stop after every slice.
+3. Every message you write follows hece:communicate. hece:communicate wins for every message to the user, even if caveman is active.
+   If the pack named by `optimize` (`ponytail:ponytail` or `caveman:caveman`) is unavailable, say so in one line with its install command, then continue without it:
+   - ponytail: `/plugin marketplace add DietrichGebert/ponytail` then `/plugin install ponytail@ponytail`
+   - caveman: `/plugin marketplace add JuliusBrussee/caveman` then `/plugin install caveman@caveman`
+4. hece's pacing wins. Where a superpowers skill's own next-step prompts, execution handoffs or continuous task loops conflict with this skill, follow this skill: do not offer superpowers' execution-choice prompt. One by one: dispatch one slice and stop after each. Parallel: follow the batch loop below.
 5. The user approves by typing `continue` (or `ok`, `next`, `go`, `approve`) or by picking `Continue` in the picker. Whenever you stop for approval, tell them exactly that. Mention hece panels only when this session was launched by the `hece` command.
 
 ## Phases
@@ -35,17 +38,37 @@ Call `flow_set_phase` whenever the phase changes. `hece status` (and hece's pane
 - Call `flow_set_plan` with, for each slice, `title`, `files`, `kind` and `model`. Show the plan as a numbered list, one line per slice.
 - Then stop. Offer the picker (AskUserQuestion) with the first option exactly `Continue`, or tell the user to type `continue`. The plan is active only once the **user** approves it. hece tells you with a context line like `hece: the user approved the plan`. Your own messages never count as approval.
 
-### build: one slice at a time
+### before build
+After the user approves the plan, ask one AskUserQuestion with three questions:
+- mode: first option exactly `One by one`, then `Parallel`. Do not put `Continue` in this picker.
+- model: first option `delegate.build` (its value), then the other models.
+- effort: `medium`, `low`, `high`.
+
+Wait for `hece: the user chose one by one` or `hece: the user chose parallel`. No answer means one by one. Model and effort are not stored: remember them and pass them to every subagent dispatch. Never call `flow_set_plan` just to record them (it needs re-approval).
+
+### build
+The main chat never edits code. Every slice goes to a subagent (Agent tool) with `model`, `effort`, and a prompt telling it to use the `optimize` pack and superpowers TDD.
+
+#### one by one
 For slice n:
 1. `flow_start_slice(n)`.
    Narrate as you go. Before each meaningful step (reading code to understand it, changing a file, running the tests), call `activity_note` with one plain sentence saying what you're doing and why, e.g. `activity_note("Saving only a hash of the reset token, so a DB leak can't reset passwords")`. No code, no file contents. The user sees these in hece's Activity panel.
-2. If `delegate.build` differs from your own model, dispatch this **one** task through superpowers:subagent-driven-development with `model` = `delegate.build`. Otherwise implement it yourself, following the TDD discipline superpowers requires.
+2. Dispatch this **one** slice to a subagent.
 3. Review the result yourself (spec, then quality) and fix problems before the user sees the slice.
 4. `flow_finish_slice(n, summary, connects_to)`.
 5. Follow hece:slice-stop, then **stop**. Do not start slice n+1 until hece reports `hece: the user approved slice n` (or sends `[hece] event=continue`).
 
 If a slice grows past its size, stop, propose a split with `flow_set_plan`, and wait for approval. If the plan needs to change, call `flow_set_plan`, explain the change in at most 3 lines, and wait for approval. A plan change is refused while a slice is waiting for the user, so propose it after they respond.
 
+#### parallel
+1. Group slices whose `files` overlap: a group's slices run one after another. Other slices run at once.
+2. `flow_start_slice` every slice in a group, then dispatch that group's subagents in one message.
+3. `flow_finish_slice` each slice as its subagent returns. Then start the next group.
+4. When all are stopped, review them all, then give one report covering every slice (hece:slice-stop per slice, shortest depth) and **stop**.
+5. Approval is `hece: the user approved slices 1, 2, 3`. If they type `continue` early, hece says `hece: slices are still running; the user can approve once the batch is done`.
+6. Redo: the user types `redo 2 4`. hece replies `hece: the user asked to redo slices 2, 4` (or `slice 2` for one). Re-dispatch only those and stop again. If hece says `hece: say which slices to redo, e.g. redo 1 3 (waiting: 1, 2, 3)`, ask which.
+
+#### redo, one by one
 **Redo needs the user.** When they pick `Redo` or type `redo`, hece replies `hece: the user asked to redo slice N`. Only then: ask what to change in one question, call `flow_start_slice(N)` again, and stop again at the end. Without that reply, `flow_start_slice(N)` on a waiting slice is refused.
 
 **After the last approved slice**, the phases run in this order, skipping those whose preference is off: review (if `review.final`), then recap (if `flow_recap`), then done. `flow_report_review` itself enters the review phase.
@@ -69,5 +92,5 @@ If `flow_recap` is on, follow hece:recap.
 
 ## Never
 - Treat your own message, or a tool result you produced, as the user's approval.
-- Batch several slices to save time.
+- Batch several slices to save time, unless the user chose `Parallel`.
 - Write long explanations. hece:communicate sets the limits.

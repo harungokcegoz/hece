@@ -101,6 +101,31 @@ hece status
 
 To approve the plan or a slice, type `continue` (or `ok`, `next`, `go`, `approve`), or pick **Continue** in the picker.
 
+## Build modes
+
+After you approve the plan, hece asks three questions in one picker:
+
+- **Mode:** `One by one` (default) or `Parallel`.
+- **Model** for the build subagents (first option is `delegate.build`).
+- **Effort:** `medium`, `low` or `high`.
+
+Model and effort are asked every time and not stored. The main chat never edits code: every slice is built by a subagent, told to use your `optimize` pack and superpowers TDD.
+
+- **One by one:** one slice, one stop, one approval.
+- **Parallel:** independent slices run at the same time. Slices that touch the same files run one after another. You get one report for the whole batch. Type `continue` to approve all of it (typing it while slices still run does nothing), or `redo 2 4` to send specific slices back.
+
+`optimize` picks a pack the subagents use: `ponytail` or `caveman`. If it isn't installed, hece says so and carries on without it.
+
+```
+/plugin marketplace add DietrichGebert/ponytail
+/plugin install ponytail@ponytail
+
+/plugin marketplace add JuliusBrussee/caveman
+/plugin install caveman@caveman
+```
+
+Caveman turns itself on at SessionStart and SubagentStart, so it also affects the main chat once installed. hece can't switch that off, but its flow skill says hece:communicate wins for every message to you.
+
 ## Without the CLI: the portable skill
 
 You don't use Claude Code, or don't want to install anything? [`portable/staying-in-the-loop/SKILL.md`](portable/staying-in-the-loop/SKILL.md) is the same approach as a single, brand-neutral skill file for any chat or agent app. It covers the discussion, small slices, a stop after every slice, how you approve, explanations with diagrams, review and recap.
@@ -122,6 +147,7 @@ flow_recap: false
 review: { final: on, reviewer_model: opus, show_minor: false }
 delegate: { orchestrator: opus, build: sonnet, review: opus }
 guards: on
+optimize: ponytail          # ponytail | caveman
 ```
 
 A typo like `gaurds: off` is reported by name, and the safe default (guards on) stays.
