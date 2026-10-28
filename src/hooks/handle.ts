@@ -184,8 +184,8 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     const r = updateFlow(() => {
       if (!fromMain(via)) return null
       const res = requestRedo(flow, ctx.now)
-      requested = res.requested
-      return res.requested === null ? null : res.state
+      requested = res.requested[0] ?? null
+      return requested === null ? null : res.state
     })
     if (!r.ran) return notRecorded(hookEventName, 'the redo request')
     if (requested === null) return none
@@ -207,7 +207,10 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     })
     if (!r.ran) return notRecorded(hookEventName, 'the approval')
     if (!approved) return none
-    const text = approved.what === 'plan' ? 'hece: the user approved the plan' : `hece: the user approved slice ${approved.n}`
+    const text =
+      approved.what === 'plan' ? 'hece: the user approved the plan'
+      : approved.what === 'slices' ? `hece: the user approved slices ${approved.ns.join(', ')}`
+      : `hece: the user approved slice ${approved.n}`
     ev('approved', { what: approved.what, n: approved.what === 'slice' ? approved.n : undefined, via })
     return { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: text } }) }
   }

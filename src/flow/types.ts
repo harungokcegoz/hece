@@ -23,10 +23,13 @@ export interface Slice {
   redoRequested?: boolean
 }
 
+export type BuildMode = 'one-by-one' | 'parallel'
+
 export interface Plan {
   slices: Slice[]
   approved: boolean
   changed: boolean
+  mode?: BuildMode
 }
 
 export interface ReviewSummary {
