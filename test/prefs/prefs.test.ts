@@ -34,6 +34,12 @@ describe('presets', () => {
     expect(p.check_questions).toBe('off')
     expect(p.flow_recap).toBe(true)
   })
+  it('defaults optimize to ponytail and accepts caveman', () => {
+    expect(presetDefaults('involved').optimize).toBe('ponytail')
+    expect(presetDefaults('learning').optimize).toBe('ponytail')
+    expect(validatePrefs({ optimize: 'caveman' }, 'x')).toEqual({ flat: { optimize: 'caveman' }, errors: [] })
+    expect(validatePrefs({ optimize: 'grunt' }, 'x').errors[0]).toContain('ponytail | caveman')
+  })
 })
 
 describe('validation', () => {

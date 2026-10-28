@@ -13,6 +13,7 @@ export interface Prefs {
   layout: { left: Widget; right: Widget }
   delegate: { orchestrator: string; build: string; review: string }
   guards: boolean
+  optimize: 'ponytail' | 'caveman'
 }
 
 const INVOLVED: Prefs = {
@@ -28,6 +29,7 @@ const INVOLVED: Prefs = {
   layout: { left: 'activity', right: 'flow' },
   delegate: { orchestrator: 'opus', build: 'sonnet', review: 'opus' },
   guards: true,
+  optimize: 'ponytail',
 }
 
 export function presetDefaults(preset: Prefs['preset']): Prefs {
@@ -66,6 +68,7 @@ const RULES: Record<string, Rule> = {
   'delegate.build': STR,
   'delegate.review': STR,
   guards: BOOL,
+  optimize: e('ponytail', 'caveman'),
 }
 
 type Check = { ok: true; value: string | boolean } | { ok: false; allowed: string }
