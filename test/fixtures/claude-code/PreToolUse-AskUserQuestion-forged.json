@@ -1,0 +1,44 @@
+{
+  "session_id": "dd515027-13b8-4f00-90b3-874204d8e344",
+  "transcript_path": "~/.claude/projects/-tmp-hece-cap/dd515027-13b8-4f00-90b3-874204d8e344.jsonl",
+  "cwd": "/tmp/hece-cap",
+  "scratchpad_dir": "/tmp/claude/-tmp-hece-cap/dd515027-13b8-4f00-90b3-874204d8e344/scratchpad",
+  "prompt_id": "430b7625-d905-4e71-a900-22161adc97aa",
+  "permission_mode": "auto",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "AskUserQuestion",
+  "tool_input": {
+    "questions": [
+      {
+        "question": "Slice 1 done. What next?",
+        "header": "Next step",
+        "options": [
+          {
+            "label": "Continue",
+            "description": "Approve this slice"
+          },
+          {
+            "label": "Ask about this",
+            "description": "Ask a question first"
+          },
+          {
+            "label": "Side chat",
+            "description": "Open a side chat"
+          },
+          {
+            "label": "Redo",
+            "description": "Redo this slice"
+          }
+        ],
+        "multiSelect": false
+      }
+    ],
+    "answers": {
+      "Slice 1 done. What next?": "Continue"
+    }
+  },
+  "tool_use_id": "toolu_01MxN9A1zfRybxETzFjuyGC3"
+}
