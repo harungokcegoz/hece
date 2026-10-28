@@ -1,3 +1,5 @@
+import { VENDORS } from './vendors.js'
+
 export type Widget = 'flow' | 'activity' | 'sessions' | 'none'
 
 export interface Prefs {
@@ -12,6 +14,7 @@ export interface Prefs {
   flow_recap: boolean
   layout: { left: Widget; right: Widget }
   delegate: { orchestrator: string; build: string; review: string }
+  effort: { orchestrator: string; build: string; review: string }
   guards: boolean
   optimize: 'ponytail' | 'caveman'
 }
@@ -27,7 +30,8 @@ const INVOLVED: Prefs = {
   review: { final: true, reviewer_model: 'opus', show_minor: false },
   flow_recap: false,
   layout: { left: 'activity', right: 'flow' },
-  delegate: { orchestrator: 'opus', build: 'sonnet', review: 'opus' },
+  delegate: { orchestrator: 'default', build: 'sonnet', review: 'opus' },
+  effort: { orchestrator: 'default', build: 'medium', review: 'high' },
   guards: true,
   optimize: 'ponytail',
 }
@@ -67,6 +71,10 @@ const RULES: Record<string, Rule> = {
   'delegate.orchestrator': STR,
   'delegate.build': STR,
   'delegate.review': STR,
+  // shortcut: effort is checked against Claude's levels only; validate against VENDORS[agent] once another adapter is supported
+  'effort.orchestrator': e('default', ...VENDORS.claude.efforts),
+  'effort.build': e(...VENDORS.claude.efforts),
+  'effort.review': e(...VENDORS.claude.efforts),
   guards: BOOL,
   optimize: e('ponytail', 'caveman'),
 }

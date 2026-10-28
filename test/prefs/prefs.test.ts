@@ -116,3 +116,17 @@ describe('loadPrefs', () => {
     expect(loadPrefs({}, root, home)).toEqual({ prefs: presetDefaults('involved'), errors: [] })
   })
 })
+
+describe('effort and orchestrator', () => {
+  it('defaults: orchestrator uses Claude Code\'s own setting', () => {
+    const p = presetDefaults('involved')
+    expect(p.delegate.orchestrator).toBe('default')
+    expect(p.effort).toEqual({ orchestrator: 'default', build: 'medium', review: 'high' })
+  })
+  it('accepts vendor effort levels and rejects others', () => {
+    expect(validatePrefs({ effort: { build: 'xhigh' } }, 'x').errors).toEqual([])
+    expect(validatePrefs({ effort: { orchestrator: 'default' } }, 'x').errors).toEqual([])
+    expect(validatePrefs({ effort: { build: 'default' } }, 'x').errors[0]).toMatch(/"effort.build"/)
+    expect(validatePrefs({ effort: { review: 'huge' } }, 'x').errors[0]).toMatch(/allowed: low \| medium \| high \| xhigh \| max/)
+  })
+})
