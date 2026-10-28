@@ -125,7 +125,7 @@ export function panelFrame(
     return clamp(paintFlowLines(lines, width, height))
   }
 
-  const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height))
+  const view = buildActivity(recentEvents(paths.events).slice(-500), { root, flow: flow ?? emptyFlow() }, Math.max(1, height), width)
   if (view.length === 0) {
     // no flow: say why it is empty; a flow with no events yet keeps the original message
     const empty = flow

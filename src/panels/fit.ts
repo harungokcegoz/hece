@@ -149,6 +149,42 @@ export function fitLine(text: string, width: number): string {
   return kept + '…'
 }
 
+// Continuation rows start with `indent` spaces; breaks go at the last space past the indent, or mid-word if there is none.
+export function wrapLine(text: string, width: number, indent = 0): string[] {
+  if (width <= 0) return ['']
+  const ambiguousWide = isCjkLocale()
+  const pad = indent < width ? ' '.repeat(indent) : ''
+  const join = (cs: Array<{ text: string }>) => cs.map((c) => c.text).join('')
+  let cs = clusters(sanitise(text), ambiguousWide)
+  const rows: string[] = []
+  let prefix = ''
+  let room = width
+  let minBreak = indent
+  for (;;) {
+    let used = 0
+    let cut = 0
+    let space = -1
+    for (; cut < cs.length && used + cs[cut].width <= room; cut++) {
+      if (cs[cut].text === ' ' && used > minBreak) space = cut
+      used += cs[cut].width
+    }
+    if (cut === cs.length) return [...rows, prefix + join(cs)]
+    if (cs[cut].text === ' ') space = cut
+    const end = space > 0 ? space : cut
+    // a two-column character in a one-column row can never fit: drop it, as fitLine would
+    if (end === 0) {
+      cs = cs.slice(1)
+      continue
+    }
+    rows.push(prefix + join(cs.slice(0, end)).trimEnd())
+    cs = cs.slice(end)
+    while (cs[0]?.text === ' ') cs = cs.slice(1)
+    prefix = pad
+    room = width - pad.length
+    minBreak = 0
+  }
+}
+
 export function fitLines(lines: string[], width: number, height: number, keep: 'top' | 'bottom'): string[] {
   const h = Math.max(0, height)
   const fitted = lines.map((l) => fitLine(l, width))

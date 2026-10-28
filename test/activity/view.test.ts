@@ -49,6 +49,36 @@ describe('buildActivity', () => {
     expect(buildActivity(events, ctx, 2).map((l) => l.text)).toEqual(['▸ Slice 2 · Login', '  · running the tests'])
   })
 
+  it('wraps long lines to the width, aligned under the text', () => {
+    const long = [e('note', { text: 'checking that the reset token expires after one hour', slice: 2 })]
+    expect(buildActivity(long, ctx, 50, 24).map((l) => l.text)).toEqual([
+      '▸ Slice 2 · Login',
+      '  Now: checking that the',
+      '  reset token expires',
+      '  after one hour',
+    ])
+    expect(buildActivity(long, ctx, 50, 24).map((l) => l.kind)).toEqual(['header', 'note', 'note', 'note'])
+  })
+
+  for (const width of [40, 24, 12]) {
+    it(`never exceeds the height at width ${width}, keeps the newest line and the header`, () => {
+      const many = [
+        e('flow', { tool: 'flow_start_slice', n: 1 }),
+        ...Array.from({ length: 6 }, (_, i) => e('note', { text: `step ${i} explains a fairly long piece of the work`, slice: 1 })),
+      ]
+      const all = buildActivity(many, ctx, 100, width)
+      const head = all.filter((r) => r.kind === 'header').map((r) => r.text)
+      for (const max of [2, 3, 5, 8]) {
+        const rows = buildActivity(many, ctx, max, width)
+        expect(rows.length).toBe(max)
+        expect(rows[rows.length - 1]).toEqual(all[all.length - 1])
+        // the header comes back whenever it fits above the newest row
+        if (head.length < max) expect(rows.slice(0, head.length).map((r) => r.text)).toEqual(head)
+        for (const r of rows) expect(r.text.length).toBeLessThanOrEqual(width)
+      }
+    })
+  }
+
   it('returns kinds for colouring', () => {
     expect(buildActivity(events, ctx, 50).map((l) => l.kind).slice(0, 4)).toEqual(['milestone', 'header', 'milestone', 'note'])
   })
