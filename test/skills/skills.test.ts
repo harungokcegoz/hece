@@ -8,6 +8,11 @@ const EXPECTED = ['check-question', 'communicate', 'flow', 'recap', 'review-find
 const read = (name: string) => fs.readFileSync(path.join(DIR, name, 'SKILL.md'), 'utf8')
 
 describe('skills', () => {
+  it('flow picker offers effort.build first; review passes effort.review', () => {
+    expect(read('flow')).toContain('effort: first option `effort.build`')
+    expect(read('review-findings')).toContain('`effort.review`')
+  })
+
   it('has exactly the expected skills', () => {
     expect(fs.readdirSync(DIR).filter((f) => !f.startsWith('.')).sort()).toEqual(EXPECTED)
   })

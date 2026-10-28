@@ -42,7 +42,7 @@ Call `flow_set_phase` whenever the phase changes. `hece status` (and hece's pane
 After the user approves the plan, and only if no slice has started, ask one AskUserQuestion with three questions:
 - mode: first option exactly `One by one`, then `Parallel`. Do not put `Continue` in this picker.
 - model: first option `delegate.build` (its value), then the other models.
-- effort: `medium`, `low`, `high`.
+- effort: first option `effort.build` (its value), then up to three others from `low`, `medium`, `high`.
 
 Wait for `hece: the user chose one by one` or `hece: the user chose parallel`. No answer means one by one. The mode is `plan.mode` in `flow_get` (absent means one by one): read it there, don't rely on memory, e.g. after a plan change or compaction. If you ask late, hece replies `hece: the mode is already one by one; it can't change mid-build` (or `parallel`): keep that mode. Model and effort are not stored: remember them and pass them to every subagent dispatch. Never call `flow_set_plan` just to record them (it needs re-approval).
 

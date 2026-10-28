@@ -37,6 +37,25 @@ describe('claudeArgs', () => {
   })
 })
 
+const P = (o: string, e: string) => ({ delegate: { orchestrator: o, build: 'sonnet', review: 'opus' }, effort: { orchestrator: e, build: 'medium', review: 'high' } })
+describe('claudeArgs prefs', () => {
+  it('adds --model/--effort only when set', () => {
+    expect(claudeArgs([], '/r', P('default', 'default'))).toEqual(['--plugin-dir', '/r'])
+    expect(claudeArgs([], '/r', P('opus', 'high'))).toEqual(['--plugin-dir', '/r', '--model', 'opus', '--effort', 'high'])
+  })
+  it("the user's own flags win", () => {
+    expect(claudeArgs(['--model', 'haiku'], '/r', P('opus', 'high'))).toEqual(['--plugin-dir', '/r', '--effort', 'high', '--model', 'haiku'])
+    expect(claudeArgs(['--effort=low'], '/r', P('opus', 'high'))).toEqual(['--plugin-dir', '/r', '--model', 'opus', '--effort=low'])
+  })
+  it('launch reads the global prefs file', () => {
+    const root = tmpProject()
+    fs.mkdirSync(path.join(root, '.config-test', 'hece'), { recursive: true })
+    fs.writeFileSync(path.join(root, '.config-test', 'hece', 'preferences.yaml'), 'delegate:\n  orchestrator: sonnet\n')
+    const r = runCli(['--no-frame'], { root, env: { HECE_CLAUDE_BIN: fake } })
+    expect(JSON.parse(r.stdout.trim().split('\n').pop()!)).toContain('sonnet')
+  })
+})
+
 describe('pluginRoot', () => {
   it('points at a directory containing .claude-plugin/plugin.json', () => {
     expect(fs.existsSync(path.join(pluginRoot(), '.claude-plugin', 'plugin.json'))).toBe(true)
