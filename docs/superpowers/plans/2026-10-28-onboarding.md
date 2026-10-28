@@ -185,9 +185,9 @@ it('keeps untouched and unknown keys', () => {
 it('a non-custom preset removes custom-only keys', () => {
   expect(nextRaw({ check_questions: 'every', plan: { slice_size: 'medium' } }, presetDefaults('learning'), ['preset'])).toEqual({ preset: 'learning' })
 })
-it('legacy guards scalar becomes a mapping when a guard is touched', () => {
-  const p = presetDefaults('involved'); p.guards = { stops: false, files: true }
-  expect(nextRaw({ guards: 'off' }, p, ['guards.stops'])).toEqual({ preset: 'involved', guards: { stops: false } })
+it('legacy guards scalar is expanded, so the untouched guard keeps its old value', () => {
+  const p = presetDefaults('involved'); p.guards = { stops: false, files: false }
+  expect(nextRaw({ guards: 'off' }, p, ['guards.stops'])).toEqual({ preset: 'involved', guards: { stops: false, files: false } })
 })
 it('editing a custom key under a preset switches to custom and keeps the old values', () => {
   const p = presetDefaults('learning'); p.check_questions = 'every'
@@ -207,7 +207,7 @@ it('notices comments', () => { /* "# mine\npreset: learning\n" → hadComments t
   - `readGlobal` reuses the read/parse error wording from `load.ts`'s `readYaml`. Export `readYaml` from `load.ts` rather than copying it.
   - `nextRaw` builds the output:
     1. Clone `raw`, then set `preset`.
-    2. If `out.guards` isn't a mapping and a `guards.*` key was touched, replace it with `{}`.
+    2. If `out.guards` is a bool-like scalar (`on/off/yes/no/true/false`) and a `guards.*` key was touched, expand it to `{ stops: v, files: v }`.
     3. For each touched dotted key, set the value if it differs from `presetDefaults(next.preset)`, and delete it otherwise.
     4. If the preset isn't `custom`, delete every `CUSTOM_KEYS` entry.
     5. Drop groups left empty.
