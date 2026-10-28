@@ -34,6 +34,10 @@ describe('nextRaw', () => {
     const p = presetDefaults('involved'); p.guards = { stops: true, files: false }
     expect(nextRaw({ guards: 'off' }, p, ['guards.stops'])).toEqual({ preset: 'involved', guards: { files: false } })
   })
+  it('an invalid legacy guards scalar is dropped, not read as off', () => {
+    const p = presetDefaults('involved'); p.guards = { stops: false, files: true }
+    expect(nextRaw({ guards: 'maybe' }, p, ['guards.stops'])).toEqual({ preset: 'involved', guards: { stops: false } })
+  })
   it('editing a custom key under a preset switches to custom and keeps the old values', () => {
     const p = presetDefaults('learning'); p.check_questions = 'every'
     const r = promoteToCustom(p, ['check_questions'])

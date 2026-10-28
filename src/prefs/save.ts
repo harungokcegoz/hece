@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import YAML from 'yaml'
-import { presetDefaults, resolvePrefs, validatePrefs } from './schema.js'
+import { parseBool, presetDefaults, resolvePrefs, validatePrefs } from './schema.js'
 import type { Prefs } from './schema.js'
 import { readYaml } from './load.js'
 import { writeFileAtomic } from '../state/store.js'
@@ -69,8 +69,10 @@ export function nextRaw(raw: Obj, next: Prefs, touched: readonly string[]): Obj 
   out.preset = next.preset
   const g = out.guards
   if (touched.some((k) => k.startsWith('guards.')) && !isObj(g)) {
-    const v = typeof g === 'string' ? ['on', 'yes', 'true'].includes(g.toLowerCase()) : g
-    if (typeof v === 'boolean') out.guards = { stops: v, files: v }
+    const v = parseBool(g)
+    // an invalid scalar was ignored by the loader, so let the touched keys replace it
+    if (v === undefined) delete out.guards
+    else out.guards = { stops: v, files: v }
   }
   const want = flatten(next)
   const base = flatten(presetDefaults(next.preset))

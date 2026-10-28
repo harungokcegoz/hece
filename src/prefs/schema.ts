@@ -98,6 +98,12 @@ function check(rule: Rule, v: unknown): Check {
   return typeof v === 'string' && v.trim() !== '' ? { ok: true, value: v } : { ok: false, allowed: 'a non-empty string' }
 }
 
+/** The boolean a legacy scalar like `guards: off` means, or undefined if the loader would reject it. */
+export function parseBool(v: unknown): boolean | undefined {
+  const r = check(BOOL, v)
+  return r.ok ? (r.value as boolean) : undefined
+}
+
 export function validatePrefs(raw: unknown, source: string): { flat: Record<string, string | boolean>; errors: string[] } {
   const flat: Record<string, string | boolean> = {}
   const errors: string[] = []
