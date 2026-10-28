@@ -499,3 +499,98 @@ describe('check question pending', () => {
     expect(flow().plan!.slices[0].redoRequested).toBeFalsy()
   })
 })
+
+describe('parallel build mode', () => {
+  const pick = (answer: string, session_id = 'main', first = 'One by one') => ({
+    hook_event_name: 'PostToolUse', session_id, tool_name: 'AskUserQuestion',
+    tool_response: { questions: [{ question: 'Mode?', header: 'h', options: [{ label: first, description: '' }, { label: 'Parallel', description: '' }], multiSelect: false }], answers: { 'Mode?': answer } },
+  })
+  const typed = (prompt: string) => ({ hook_event_name: 'UserPromptSubmit', session_id: 'main', prompt })
+  const three = (statuses: Array<'todo' | 'working' | 'stopped'>, mode: 'parallel' | 'one-by-one' = 'parallel'): FlowState => ({
+    ...plan, mainSessionId: 'main',
+    plan: { ...plan.plan!, approved: true, mode, slices: statuses.map((status, i) => ({ n: i + 1, title: 't', files: [], kind: 'routine' as const, status })) },
+  })
+  const text = (r: { stdout: string }) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '')
+
+  it.each([['One by one', 'one-by-one', 'one by one'], ['Parallel', 'parallel', 'parallel']])('records picker %s from main', (answer, mode, line) => {
+    seedFlow(root, three(['todo', 'todo', 'todo'], 'one-by-one'))
+    expect(text(handleHook(pick(answer), ctx()))).toBe(`hece: the user chose ${line}`)
+    expect(flow().plan!.mode).toBe(mode)
+    expect(events()).toContain('mode_chosen')
+  })
+
+  it('ignores the mode answer from a fork or another session', () => {
+    const seeded = three(['todo', 'todo', 'todo'])
+    seedFlow(root, { ...seeded, plan: { ...seeded.plan!, mode: undefined } })
+    handleHook({ hook_event_name: 'SessionStart', session_id: 'side', source: 'fork' }, ctx())
+    for (const s of ['side', 'other']) expect(handleHook(pick('Parallel', s), ctx()).stdout).toBe('')
+    expect(flow().plan!.mode).toBeUndefined()
+    expect(events()).toContain('ignored_approval')
+    expect(events()).not.toContain('mode_chosen')
+  })
+
+  it('ignores the mode answer once a slice has started', () => {
+    const seeded = three(['working', 'todo', 'todo'], 'one-by-one')
+    seedFlow(root, seeded)
+    expect(text(handleHook(pick('Parallel'), ctx()))).toBe("hece: the mode is already one by one; it can't change mid-build")
+    expect(flow()).toEqual(seeded)
+    const par = three(['working', 'todo', 'todo'])
+    seedFlow(root, par)
+    expect(text(handleHook(pick('One by one'), ctx()))).toBe("hece: the mode is already parallel; it can't change mid-build")
+    expect(flow()).toEqual(par)
+  })
+
+  it('says nothing when a fork answers the mode mid-build', () => {
+    seedFlow(root, three(['working', 'todo', 'todo']))
+    expect(handleHook(pick('Parallel', 'other'), ctx()).stdout).toBe('')
+  })
+
+  it('says the plain still-running line on typed continue before any slice stopped', () => {
+    const seeded = three(['working', 'todo', 'todo'])
+    seedFlow(root, seeded)
+    expect(text(handleHook(typed('continue'), ctx()))).toBe('hece: slices are still running; the user can approve once the batch is done')
+    expect(flow()).toEqual(seeded)
+  })
+
+  it('does not approve mid-batch', () => {
+    const seeded = three(['stopped', 'working', 'todo'])
+    seedFlow(root, seeded)
+    expect(text(handleHook(typed('continue'), ctx()))).toBe('hece: slices are still running; the user can approve once the batch is done')
+    expect(flow()).toEqual(seeded)
+  })
+
+  it('approves the whole stopped batch', () => {
+    seedFlow(root, three(['stopped', 'stopped', 'stopped']))
+    expect(text(handleHook(typed('continue'), ctx()))).toBe('hece: the user approved slices 1, 2, 3')
+    expect(flow().plan!.slices.map(s => s.status)).toEqual(['approved', 'approved', 'approved'])
+    expect(readEvents(statePaths(root).events).find(e => e.event === 'approved')).toMatchObject({ what: 'slices', ns: [1, 2, 3] })
+  })
+
+  it('redoes the named slices', () => {
+    seedFlow(root, three(['stopped', 'stopped', 'stopped']))
+    expect(text(handleHook(typed('redo 2 3'), ctx()))).toBe('hece: the user asked to redo slices 2, 3')
+    expect(flow().plan!.slices.map(s => !!s.redoRequested)).toEqual([false, true, true])
+  })
+
+  it.each([typed('redo'), { ...pick('Redo', 'main', 'Continue'), tool_response: { questions: [{ question: 'Q?', header: 'h', options: [{ label: 'Continue', description: '' }, { label: 'Redo', description: '' }], multiSelect: false }], answers: { 'Q?': 'Redo' } } }])('asks which slices when several are stopped', payload => {
+    const seeded = three(['stopped', 'stopped', 'stopped'])
+    seedFlow(root, seeded)
+    expect(text(handleHook(payload, ctx()))).toBe('hece: say which slices to redo, e.g. redo 1 3 (waiting: 1, 2, 3)')
+    expect(flow()).toEqual(seeded)
+  })
+
+  it('typed "redo 2" with only slice 1 stopped marks nothing', () => {
+    const seeded = three(['stopped', 'todo'], 'one-by-one')
+    seedFlow(root, seeded)
+    handleHook(typed('redo 2'), ctx())
+    expect(flow()).toEqual(seeded)
+  })
+
+  it('logs slice null while two slices work, the number while one does', () => {
+    seedFlow(root, three(['working', 'working', 'todo']))
+    handleHook({ hook_event_name: 'PreToolUse', session_id: 'main', tool_name: 'Read', tool_input: { file_path: 'a' } }, ctx())
+    seedFlow(root, three(['working', 'todo', 'todo']))
+    handleHook({ hook_event_name: 'PreToolUse', session_id: 'main', tool_name: 'Read', tool_input: { file_path: 'a' } }, ctx())
+    expect(readEvents(statePaths(root).events).filter(e => e.event === 'tool').map(e => e.slice)).toEqual([null, 1])
+  })
+})

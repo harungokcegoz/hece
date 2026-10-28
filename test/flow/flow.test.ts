@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { emptyFlow, SliceInput } from '../../src/flow/types.js'
 import {
-  setPhase, addDecision, setPlan, startSlice, finishSlice, reportReview, approve, requestRedo, markCheckPending, FlowError,
+  setPhase, addDecision, setPlan, startSlice, finishSlice, reportReview, approve, requestRedo, markCheckPending, chooseMode, batchRunning, FlowError,
 } from '../../src/flow/flow.js'
 
 const slices: SliceInput[] = [
@@ -85,17 +85,17 @@ describe('flow', () => {
 
   it('allows redoing the stopped slice after requestRedo, and clears the request', () => {
     const { state, requested } = requestRedo(stoppedOne(), 6)
-    expect(requested).toBe(1)
+    expect(requested).toEqual([1])
     expect(state.plan!.slices[0]).toMatchObject({ status: 'stopped', redoRequested: true })
     const s = startSlice(state, 1, { guards: true }, 7)
     expect(s.plan!.slices[0].status).toBe('working')
     expect(s.plan!.slices[0].redoRequested).toBeUndefined()
   })
 
-  it('requestRedo returns null when no slice is stopped', () => {
+  it('requestRedo returns nothing when no slice is stopped', () => {
     const s = approvedPlan()
     const r = requestRedo(s, 6)
-    expect(r.requested).toBeNull()
+    expect(r.requested).toEqual([])
     expect(r.state).toBe(s)
   })
 
@@ -234,5 +234,59 @@ describe('check question marker', () => {
   it('does not survive starting a slice again', () => {
     const redo = requestRedo(markCheckPending(waiting(), 6), 7).state
     expect(startSlice(redo, 1, { guards: true }, 8).checkPending).toBeFalsy()
+  })
+})
+
+const threeSlices: SliceInput[] = [...slices, { title: 'Refresh', files: ['src/refresh.ts'], kind: 'routine' }]
+const G = { guards: true }
+const info = { summary: 'a', connectsTo: 'b' }
+const unapprovedPlan = () => setPlan(setPhase(emptyFlow(), 'discuss', G, 1), threeSlices, G, 2)
+const approvedThree = () => approve(unapprovedPlan(), 3).state
+const parallelPlan = () => chooseMode(approvedThree(), 'parallel', 4)!
+const allStopped = () =>
+  [1, 2, 3].reduce((s, n) => finishSlice(startSlice(s, n, G, 5 + n), n, info, 9 + n), parallelPlan())
+
+describe('parallel mode', () => {
+  it('chooseMode records the mode only after approval and before any slice starts', () => {
+    expect(chooseMode(unapprovedPlan(), 'parallel', 5)).toBeNull()
+    expect(chooseMode(approvedThree(), 'parallel', 5)!.plan!.mode).toBe('parallel')
+    expect(chooseMode(startSlice(parallelPlan(), 1, G, 5), 'one-by-one', 6)).toBeNull()
+  })
+  it('lets several slices work at once, but not restart a stopped one without redo', () => {
+    const s = startSlice(startSlice(parallelPlan(), 1, G, 5), 2, G, 6)
+    expect(s.plan!.slices.map((x) => x.status)).toEqual(['working', 'working', 'todo'])
+    const stopped = finishSlice(s, 1, info, 7)
+    expect(() => startSlice(stopped, 1, G, 8)).toThrow('slice 1 is waiting')
+    expect(startSlice(stopped, 3, G, 8).plan!.slices[2].status).toBe('working')
+  })
+  it('approves nothing while the batch runs, then every stopped slice at once', () => {
+    const mid = finishSlice(startSlice(startSlice(parallelPlan(), 1, G, 5), 2, G, 6), 1, info, 7)
+    expect(batchRunning(mid)).toBe(true)
+    expect(approve(mid, 8).approved).toBeNull()
+    const done = finishSlice(startSlice(finishSlice(mid, 2, info, 8), 3, G, 9), 3, info, 10)
+    const r = approve(done, 11)
+    expect(r.approved).toEqual({ what: 'slices', ns: [1, 2, 3] })
+    expect(r.state.plan!.slices.every((x) => x.status === 'approved')).toBe(true)
+  })
+  it('redoes exactly the named stopped slices', () => {
+    const r = requestRedo(allStopped(), 12, [2, 9])
+    expect(r.requested).toEqual([2])
+    expect(r.state.plan!.slices.map((x) => !!x.redoRequested)).toEqual([false, true, false])
+    expect(requestRedo(allStopped(), 12).requested).toEqual([]) // several stopped, none named
+    expect(requestRedo(allStopped(), 12).waiting).toEqual([1, 2, 3])
+  })
+  it('restarts a stopped slice after a redo request in parallel mode', () => {
+    const s = startSlice(requestRedo(allStopped(), 12, [2]).state, 2, G, 13)
+    expect(s.plan!.slices.map((x) => x.status)).toEqual(['stopped', 'working', 'stopped'])
+    expect(s.plan!.slices[1].redoRequested).toBeFalsy()
+  })
+  it('refuses a check question while the batch runs', () => {
+    const mid = finishSlice(startSlice(startSlice(parallelPlan(), 1, G, 5), 2, G, 6), 1, info, 7)
+    expect(() => markCheckPending(mid, 8)).toThrow('hece: slices are still running; ask the check question once the batch is done')
+    expect(markCheckPending(allStopped(), 13).checkPending).toBe(true)
+  })
+  it('keeps the mode across a plan change', () => {
+    const changed = setPlan(startSlice(parallelPlan(), 1, G, 5), threeSlices, G, 6)
+    expect(changed.plan!.mode).toBe('parallel')
   })
 })

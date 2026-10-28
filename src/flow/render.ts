@@ -1,3 +1,4 @@
+import { batchRunning } from './flow.js'
 import { FlowState, PHASES, SliceStatus } from './types.js'
 
 const STEPS = [
@@ -30,7 +31,7 @@ export function renderFlow(s: FlowState, opts: { guards: boolean }): string {
     lines.push(`${mark(id)} ${text}`)
     if (id === 'build' && s.plan) {
       for (const sl of s.plan.slices) {
-        const wait = sl.status === 'stopped' ? '  ← waiting for you' : ''
+        const wait = sl.status === 'stopped' ? (batchRunning(s) ? '  ← done' : '  ← waiting for you') : ''
         lines.push(`  ${SLICE_MARK[sl.status]} ${sl.n}. ${sl.title}${wait}`)
       }
     }

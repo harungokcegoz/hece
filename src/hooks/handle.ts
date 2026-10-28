@@ -1,13 +1,13 @@
 import fs from 'node:fs'
 import { statePaths } from '../state/paths.js'
 import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
-import { FlowState, emptyFlow } from '../flow/types.js'
+import { FlowState, BuildMode, emptyFlow } from '../flow/types.js'
 import { withDirLock } from '../util/dirlock.js'
 import { renderFlow } from '../flow/render.js'
-import { approve, requestRedo, clearCheckPending } from '../flow/flow.js'
+import { approve, requestRedo, clearCheckPending, chooseMode } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
 import { describeCommand } from '../activity/describe.js'
-import { EDIT_TOOLS, decideTool, isContinueIntent, isRedoIntent, pickerApproved, pickerRedo } from '../guards/guards.js'
+import { EDIT_TOOLS, decideTool, isContinueIntent, parseRedo, pickerMode, pickerApproved, pickerRedo } from '../guards/guards.js'
 
 export interface HookPayload {
   hook_event_name?: string
@@ -179,22 +179,40 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
     return true
   }
 
-  const recordRedo = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
-    let requested = null as number | null
+  const say = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', additionalContext: string) => ({
+    stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext } }),
+  })
+
+  const recordRedo = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string, ns: number[] = []) => {
+    let requested: number[] = []
+    let waiting: number[] = []
     const r = updateFlow(() => {
       if (!fromMain(via)) return null
-      const res = requestRedo(flow, ctx.now)
+      const res = requestRedo(flow, ctx.now, ns)
       requested = res.requested
-      return res.requested === null ? null : res.state
+      waiting = res.waiting
+      return requested.length === 0 ? null : res.state
     })
     if (!r.ran) return notRecorded(hookEventName, 'the redo request')
-    if (requested === null) return none
-    ev('redo_requested', { n: requested, via })
-    return {
-      stdout: JSON.stringify({
-        hookSpecificOutput: { hookEventName, additionalContext: `hece: the user asked to redo slice ${requested}` },
-      }),
+    if (requested.length === 0) {
+      return waiting.length > 0 && r.ran && mainReason() === null
+        ? say(hookEventName, `hece: say which slices to redo, e.g. redo 1 3 (waiting: ${waiting.join(', ')})`)
+        : none
     }
+    ev('redo_requested', { n: requested[0], ns: requested, via })
+    return say(hookEventName, `hece: the user asked to redo slice${requested.length > 1 ? 's' : ''} ${requested.join(', ')}`)
+  }
+
+  const recordMode = (via: string, mode: BuildMode) => {
+    const r = updateFlow(() => (fromMain(via) ? chooseMode(flow, mode, ctx.now) : null))
+    if (!r.ran) return notRecorded('PostToolUse', 'the mode')
+    if (!r.wrote) {
+      // a main-session answer that came too late: tell the agent what the mode is, so it can't drift
+      const started = flow.plan?.slices.some(x => x.status !== 'todo')
+      return started && mainReason() === null ? say('PostToolUse', `hece: the mode is already ${flow.plan?.mode === 'parallel' ? 'parallel' : 'one by one'}; it can't change mid-build`) : none
+    }
+    ev('mode_chosen', { mode, via })
+    return say('PostToolUse', `hece: the user chose ${mode === 'parallel' ? 'parallel' : 'one by one'}`)
   }
 
   const recordApproval = (hookEventName: 'UserPromptSubmit' | 'PostToolUse', via: string) => {
@@ -206,9 +224,13 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
       return res.approved ? res.state : null
     })
     if (!r.ran) return notRecorded(hookEventName, 'the approval')
-    if (!approved) return none
-    const text = approved.what === 'plan' ? 'hece: the user approved the plan' : `hece: the user approved slice ${approved.n}`
-    ev('approved', { what: approved.what, n: approved.what === 'slice' ? approved.n : undefined, via })
+    const running = flow.plan?.approved && flow.plan.mode === 'parallel' && flow.plan.slices.some(x => x.status === 'todo' || x.status === 'working')
+    if (!approved) return running && mainReason() === null ? say(hookEventName, 'hece: slices are still running; the user can approve once the batch is done') : none
+    const text =
+      approved.what === 'plan' ? 'hece: the user approved the plan'
+      : approved.what === 'slices' ? `hece: the user approved slices ${approved.ns.join(', ')}`
+      : `hece: the user approved slice ${approved.n}`
+    ev('approved', { what: approved.what, n: approved.what === 'slice' ? approved.n : undefined, ns: approved.what === 'slices' ? approved.ns : undefined, via })
     return { stdout: JSON.stringify({ hookSpecificOutput: { hookEventName, additionalContext: text } }) }
   }
 
@@ -228,7 +250,8 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
       setIdle(false)
       ev('prompt', { text: oneLine(p.prompt ?? '') })
       const wasCheckAnswer = consumeCheckAnswer('typed')
-      if (p.prompt && isRedoIntent(p.prompt)) return recordRedo('UserPromptSubmit', 'typed')
+      const redo = p.prompt ? parseRedo(p.prompt) : null
+      if (redo) return recordRedo('UserPromptSubmit', 'typed', redo)
       if (wasCheckAnswer) return none
       return p.prompt && isContinueIntent(p.prompt) ? recordApproval('UserPromptSubmit', 'typed') : none
     }
@@ -244,7 +267,8 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
         ev('blocked', { tool: name, target, ...desc, reason: d.reason })
         return deny(d.reason)
       }
-      ev('tool', { tool: name, target, ...desc, slice: flow.currentSlice })
+      const working = flow.plan?.slices.filter(x => x.status === 'working') ?? []
+      ev('tool', { tool: name, target, ...desc, slice: working.length === 1 ? working[0].n : working.length > 1 ? null : flow.currentSlice })
       return none
     }
     case 'PostToolUse': {
@@ -253,7 +277,9 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
       // redo wins if both were somehow selected: it is the answer that does not advance the flow
       if (pickerRedo(p.tool_response)) return recordRedo('PostToolUse', 'picker')
       if (wasCheckAnswer) return none
-      return pickerApproved(p.tool_response) ? recordApproval('PostToolUse', 'picker') : none
+      if (pickerApproved(p.tool_response)) return recordApproval('PostToolUse', 'picker')
+      const mode = pickerMode(p.tool_response)
+      return mode ? recordMode('picker', mode) : none
     }
     case 'Stop':
       setIdle(true)

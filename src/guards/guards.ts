@@ -1,7 +1,8 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { FlowState } from '../flow/types.js'
+import { BuildMode, FlowState } from '../flow/types.js'
+import { batchRunning } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
 
 export const EDIT_TOOLS: ReadonlySet<string> = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
@@ -68,7 +69,8 @@ export function decideTool(
       : 'hece: no code edits before the user approves the plan')
   }
   const stopped = flow.plan.slices.find((s) => s.status === 'stopped')
-  if (stopped) return deny(`hece: slice ${stopped.n} is waiting for the user`)
+  // a parallel batch keeps editing until every slice has stopped
+  if (stopped && !batchRunning(flow)) return deny(`hece: slice ${stopped.n} is waiting for the user`)
   return { allow: true }
 }
 
@@ -80,24 +82,30 @@ export function isContinueIntent(text: string): boolean {
   return CONTINUE_WORDS.has(normalize(text))
 }
 
+// `redo` -> [] (every waiting slice); `redo 2 4` / `redo 2, 4` -> [2, 4]; anything else -> null
+export function parseRedo(text: string): number[] | null {
+  const m = /^redo((?:[\s,]+[1-9]\d*)*)$/u.exec(normalize(text))
+  return m ? (m[1].match(/\d+/gu) ?? []).map(Number) : null
+}
+
 export function isRedoIntent(text: string): boolean {
-  return normalize(text) === 'redo'
+  return parseRedo(text) !== null
 }
 
 // AskUserQuestion's result is { questions: [...], answers: { "<question>": string | string[] } }.
 // `questions` echoes every option label (including "Continue"), so only `answers` may be read, and only
-// the answer to the approval question. Any other shape (such as a string the agent could imitate) yields none.
+// the answer to the question being checked. Any other shape (such as a string the agent could imitate) yields none.
 const normalizeLabel = (v: unknown): string => (typeof v === 'string' ? v.trim().toLowerCase() : '')
 
-// The answer to the approval question: the one question whose first option is `Continue`. Other questions in
-// the same picker are ignored, and two such questions are ambiguous, so there is no approval answer.
-function approvalAnswers(toolResponse: unknown): string[] {
+// The answer to the one question whose first option is `firstLabel`. Other questions in
+// the same picker are ignored, and two such questions are ambiguous, so there is no answer.
+function answersFor(toolResponse: unknown, firstLabel: string): string[] {
   if (toolResponse === null || typeof toolResponse !== 'object') return []
   const { questions, answers } = toolResponse as { questions?: unknown; answers?: unknown }
   if (!Array.isArray(questions) || answers === null || typeof answers !== 'object') return []
   const approval = questions.filter((q) => {
     const options = (q as { options?: unknown } | null)?.options
-    return Array.isArray(options) && normalizeLabel((options[0] as { label?: unknown } | undefined)?.label) === 'continue'
+    return Array.isArray(options) && normalizeLabel((options[0] as { label?: unknown } | undefined)?.label) === firstLabel
   })
   if (approval.length !== 1) return []
   const text = (approval[0] as { question?: unknown }).question
@@ -107,10 +115,16 @@ function approvalAnswers(toolResponse: unknown): string[] {
 }
 
 export function pickerApproved(toolResponse: unknown): boolean {
-  return approvalAnswers(toolResponse).includes('continue')
+  return answersFor(toolResponse, 'continue').includes('continue')
 }
 
 // Redo follows the same rule as approval, so a check question or an unrelated question offering "Redo" cannot trigger it.
 export function pickerRedo(toolResponse: unknown): boolean {
-  return approvalAnswers(toolResponse).includes('redo')
+  return answersFor(toolResponse, 'continue').includes('redo')
+}
+
+// Same rule again, keyed on the build-mode question (first option `One by one`).
+export function pickerMode(toolResponse: unknown): BuildMode | null {
+  const a = answersFor(toolResponse, 'one by one')
+  return a.includes('parallel') ? 'parallel' : a.includes('one by one') ? 'one-by-one' : null
 }

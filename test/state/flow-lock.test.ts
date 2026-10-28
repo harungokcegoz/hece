@@ -64,6 +64,15 @@ describe('flow.json lock', () => {
     expect(events().map((e) => e.event)).not.toContain('approved')
   })
 
+  it('the hook says the mode was not recorded when the lock stays busy', () => {
+    seedFlow(root, { ...plan, mainSessionId: 'main', plan: { ...plan.plan!, approved: true } })
+    holdLock()
+    const pick = { hook_event_name: 'PostToolUse', session_id: 'main', tool_name: 'AskUserQuestion', tool_response: { questions: [{ question: 'M?', header: 'h', options: [{ label: 'One by one', description: '' }, { label: 'Parallel', description: '' }], multiSelect: false }], answers: { 'M?': 'Parallel' } } }
+    const r = handleHook(pick, ctx({ lockTimeoutMs: 80 }))
+    expect(JSON.parse(r.stdout).hookSpecificOutput.additionalContext).toMatch(/could not record the mode/i)
+    expect(flow().plan!.mode).toBeUndefined()
+  })
+
   it('does not change what an edit guard decides when the lock is busy', () => {
     seedFlow(root, plan)
     holdLock()

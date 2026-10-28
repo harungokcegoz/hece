@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { emptyFlow } from '../../src/flow/types.js'
-import { setPhase, addDecision, setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.js'
+import { setPhase, addDecision, setPlan, startSlice, finishSlice, approve, chooseMode } from '../../src/flow/flow.js'
 import { renderFlow } from '../../src/flow/render.js'
 
 describe('renderFlow', () => {
@@ -58,5 +58,14 @@ describe('renderFlow', () => {
     const out = renderFlow(s, { guards: true })
     expect(out).toContain('✓ Review (2 important, 3 minor)')
     expect(out).toContain('✓ Recap')
+  })
+
+  it('shows a stopped slice as done while a parallel batch still runs', () => {
+    const plan = [{ title: 'A', files: [], kind: 'routine' as const }, { title: 'B', files: [], kind: 'routine' as const }]
+    let s = approve(setPlan(emptyFlow(), plan, { guards: false }, 1), 2).state
+    s = chooseMode(s, 'parallel', 3)!
+    s = finishSlice(startSlice(startSlice(s, 1, { guards: true }, 4), 2, { guards: true }, 5), 1, { summary: 'a', connectsTo: 'b' }, 6)
+    expect(renderFlow(s, { guards: true })).toContain('■ 1. A  ← done')
+    expect(renderFlow(s, { guards: true })).not.toContain('waiting for you')
   })
 })

@@ -3,9 +3,9 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { emptyFlow } from '../../src/flow/types.js'
-import { setPhase, setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.js'
+import { setPhase, setPlan, startSlice, finishSlice, approve, chooseMode } from '../../src/flow/flow.js'
 import { presetDefaults } from '../../src/prefs/schema.js'
-import { decideTool, isContinueIntent, isRedoIntent, pickerApproved, pickerRedo } from '../../src/guards/guards.js'
+import { decideTool, isContinueIntent, isRedoIntent, parseRedo, pickerMode, pickerApproved, pickerRedo } from '../../src/guards/guards.js'
 
 const on = presetDefaults('involved')
 const protect = { root: '/proj', configDir: '/home/u/.config/hece' }
@@ -211,4 +211,38 @@ describe('pickerApproved', () => {
     expect(pickerApproved({ answers: { q: 'Continue later' } })).toBe(false)
     expect(pickerApproved(undefined)).toBe(false)
   })
+})
+
+const par = chooseMode(approved, 'parallel', 3)!
+const par2 = startSlice(startSlice(par, 1, { guards: true }, 4), 2, { guards: true }, 5)
+const parallelOneStoppedOneWorking = finishSlice(par2, 1, { summary: 's', connectsTo: 'c' }, 6)
+const parallelAllStopped = finishSlice(parallelOneStoppedOneWorking, 2, { summary: 's', connectsTo: 'c' }, 7)
+const edit = { name: 'Edit' }
+
+describe('parallel guards', () => {
+  it('lets edits run while a parallel batch still has working slices', () => {
+    expect(decideTool(parallelOneStoppedOneWorking, on, edit, protect)).toEqual({ allow: true })
+  })
+  it('blocks edits once the whole parallel batch is waiting', () => {
+    expect(decideTool(parallelAllStopped, on, edit, protect)).toEqual({ allow: false, reason: 'hece: slice 1 is waiting for the user' })
+  })
+})
+describe('parseRedo', () => {
+  it.each([['redo', []], ['Redo 2 4', [2, 4]], ['redo 2, 4.', [2, 4]]])('%s', (t, ns) => expect(parseRedo(t as string)).toEqual(ns))
+  it.each(['redo it', 'please redo', 'redo 0'])('rejects %s', (t) => expect(parseRedo(t)).toBeNull())
+})
+describe('pickerMode', () => {
+  const pick = (labels: string[], answer: string) => ({
+    questions: [{ question: 'How should slices run?', options: labels.map((label) => ({ label })) }],
+    answers: { 'How should slices run?': answer },
+  })
+  it('reads the answer to the One by one question', () => {
+    expect(pickerMode(pick(['One by one', 'Parallel'], 'Parallel'))).toBe('parallel')
+    expect(pickerMode(pick(['One by one', 'Parallel'], 'One by one'))).toBe('one-by-one')
+  })
+  it('ignores pickers that put Parallel first or offer only Parallel', () => {
+    expect(pickerMode(pick(['Parallel', 'One by one'], 'Parallel'))).toBeNull()
+    expect(pickerMode(pick(['Parallel'], 'Parallel'))).toBeNull()
+  })
+  it('ignores agent-shaped strings', () => expect(pickerMode('Parallel')).toBeNull())
 })

@@ -73,6 +73,8 @@ A new feature starts a **fresh** flow, with no decisions or slices carried over.
 3. **Stop** and explain the slice (format below).
 4. Wait. Don't start slice *n+1* until the user approves.
 
+If the user asks to run independent slices in parallel, you may. Still stop once for all of them.
+
 ### 4. Review
 When the last slice is approved, review the whole feature with fresh eyes. Use a separate reviewer agent if your app has one.
 - Give a one-line summary first: `Review: 2 important, 1 minor.`

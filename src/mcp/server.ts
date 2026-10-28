@@ -178,7 +178,8 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
         const s = load()
         const clean = cleanNote(text)
         if (!clean) return ok('empty note; nothing recorded')
-        appendEvent(paths.events, { at: now(), event: 'note', text: clean, slice: s.currentSlice })
+        const working = s.plan?.slices.filter((x) => x.status === 'working') ?? []
+        appendEvent(paths.events, { at: now(), event: 'note', text: clean, slice: working.length === 1 ? working[0].n : working.length > 1 ? null : s.currentSlice })
         return ok('noted')
       } catch (err) {
         return fail((err as Error).message)
