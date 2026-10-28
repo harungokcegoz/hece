@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { emptyFlow } from '../../src/flow/types.js'
 import { setPlan, startSlice, finishSlice, approve } from '../../src/flow/flow.js'
-import { fitLine, fitLines, displayWidth, charWidth, isCjkLocale } from '../../src/panels/fit.js'
+import { fitLine, fitLines, wrapLine, displayWidth, charWidth, isCjkLocale } from '../../src/panels/fit.js'
 import { stripAnsi, color } from '../../src/panels/color.js'
 import { flowPanelLines, colorFlowLine, sessionsPanelLines, fitFlowLines, paintFlowLines } from '../../src/panels/views.js'
 
@@ -30,6 +30,34 @@ describe('fit', () => {
   it('keeps the top or the bottom when there are too many lines', () => {
     expect(fitLines(['1', '2', '3'], 10, 2, 'top')).toEqual(['1', '2'])
     expect(fitLines(['1', '2', '3'], 10, 2, 'bottom')).toEqual(['2', '3'])
+  })
+})
+
+describe('wrapLine', () => {
+  it('wraps at word boundaries and aligns continuation rows under the text', () => {
+    expect(wrapLine('  · reading the token model and the login form', 20, 4)).toEqual([
+      '  · reading the',
+      '    token model and',
+      '    the login form',
+    ])
+  })
+  it('never breaks inside the marker, and hard-breaks a word longer than the row', () => {
+    expect(wrapLine('  · abcdefghijklmnop', 10, 4)).toEqual(['  · abcdef', '    ghijkl', '    mnop'])
+  })
+  it('keeps short lines as one row', () => {
+    expect(wrapLine('abc', 10, 2)).toEqual(['abc'])
+    expect(wrapLine('', 10, 2)).toEqual([''])
+  })
+  it('never splits or overflows wide characters', () => {
+    const rows = wrapLine('  ◆ 認証フローを実装する🚀🚀🚀 and more words here', 9, 4)
+    for (const r of rows) expect(displayWidth(r)).toBeLessThanOrEqual(9)
+    expect(rows.join('').replace(/ /g, '')).toBe('◆認証フローを実装する🚀🚀🚀andmorewordshere')
+    expect(wrapLine('e\u0301e\u0301e\u0301', 2, 0)).toEqual(['e\u0301e\u0301', 'e\u0301'])
+  })
+  it('sanitises like fitLine and handles degenerate sizes', () => {
+    expect(wrapLine('a\nb\x1b[31mc', 10, 0)).toEqual(['a bc'])
+    expect(wrapLine('abc', 0, 0)).toEqual([''])
+    expect(wrapLine('abcd', 2, 4)).toEqual(['ab', 'cd'])
   })
 })
 
