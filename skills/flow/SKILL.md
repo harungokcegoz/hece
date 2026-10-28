@@ -61,12 +61,12 @@ For slice n:
 If a slice grows past its size, stop, propose a split with `flow_set_plan`, and wait for approval. If the plan needs to change, call `flow_set_plan`, explain the change in at most 3 lines, and wait for approval. A plan change is refused while a slice is waiting for the user, so propose it after they respond.
 
 #### parallel
-1. Group slices whose `files` overlap: a group's slices run one after another. Other slices run at once.
-2. `flow_start_slice` every slice in a group, then dispatch that group's subagents in one message.
-3. `flow_finish_slice` each slice as its subagent returns. Then start the next group.
+1. Split the slices into waves. No two slices in a wave share a file in `files`; slices that overlap go in different waves, in plan order.
+2. `flow_start_slice` every slice in a wave, then dispatch that wave's subagents in one message.
+3. `flow_finish_slice` each slice as its subagent returns. Then start the next wave.
 4. When all are stopped, review them all, then give one report covering every slice (hece:slice-stop per slice, shortest depth) and **stop**.
 5. Approval is `hece: the user approved slices 1, 2, 3`. If they type `continue` early, hece says `hece: slices are still running; the user can approve once the batch is done`.
-6. Redo: the user types `redo 2 4`. hece replies `hece: the user asked to redo slices 2, 4` (or `slice 2` for one). Re-dispatch only those and stop again. If hece says `hece: say which slices to redo, e.g. redo 1 3 (waiting: 1, 2, 3)`, ask which.
+6. Redo: the user types `redo 2 4`. hece replies `hece: the user asked to redo slices 2, 4` (or `slice 2` for one). For each, call `flow_start_slice(n)`, then re-dispatch only those and stop again. If hece says `hece: say which slices to redo, e.g. redo 1 3 (waiting: 1, 2, 3)`, ask which.
 
 #### redo, one by one
 **Redo needs the user.** When they pick `Redo` or type `redo`, hece replies `hece: the user asked to redo slice N`. Only then: ask what to change in one question, call `flow_start_slice(N)` again, and stop again at the end. Without that reply, `flow_start_slice(N)` on a waiting slice is refused.
