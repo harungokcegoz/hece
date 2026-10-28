@@ -275,6 +275,16 @@ describe('parallel mode', () => {
     expect(requestRedo(allStopped(), 12).requested).toEqual([]) // several stopped, none named
     expect(requestRedo(allStopped(), 12).waiting).toEqual([1, 2, 3])
   })
+  it('restarts a stopped slice after a redo request in parallel mode', () => {
+    const s = startSlice(requestRedo(allStopped(), 12, [2]).state, 2, G, 13)
+    expect(s.plan!.slices.map((x) => x.status)).toEqual(['stopped', 'working', 'stopped'])
+    expect(s.plan!.slices[1].redoRequested).toBeFalsy()
+  })
+  it('refuses a check question while the batch runs', () => {
+    const mid = finishSlice(startSlice(startSlice(parallelPlan(), 1, G, 5), 2, G, 6), 1, info, 7)
+    expect(() => markCheckPending(mid, 8)).toThrow('hece: slices are still running; ask the check question once the batch is done')
+    expect(markCheckPending(allStopped(), 13).checkPending).toBe(true)
+  })
   it('keeps the mode across a plan change', () => {
     const changed = setPlan(startSlice(parallelPlan(), 1, G, 5), threeSlices, G, 6)
     expect(changed.plan!.mode).toBe('parallel')

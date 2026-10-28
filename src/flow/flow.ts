@@ -115,6 +115,7 @@ export function markCheckPending(s: FlowState, now: number): FlowState {
   if (!s.plan?.slices.some((x) => x.status === 'stopped')) {
     throw new FlowError('hece: no slice is waiting for the user, so there is no check question to mark')
   }
+  if (batchRunning(s)) throw new FlowError('hece: slices are still running; ask the check question once the batch is done')
   const next = clone(s)
   next.checkPending = true
   next.updatedAt = now

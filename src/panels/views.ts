@@ -28,7 +28,7 @@ function selectFlowLines(lines: string[], height: number): string[] {
   while (footerStart > 0 && isFooter(lines[footerStart - 1])) footerStart--
   const body = (l: string, i: number) => i < footerStart && l.length > 0
   const isSlice = (l: string) => /^\s+\S/.test(l)
-  let current = lines.findIndex((l, i) => body(l, i) && (l.trimStart().startsWith('■') || l.includes('← waiting for you')))
+  let current = lines.findIndex((l, i) => body(l, i) && ((l.trimStart().startsWith('■') && !l.includes('← done')) || l.includes('← waiting for you')))
   if (current < 0) current = lines.findIndex((l, i) => body(l, i) && isSlice(l) && l.trimStart().startsWith('▸'))
   if (current < 0) current = lines.findIndex((l, i) => body(l, i) && /^[▸■]/.test(l.trimStart()))
   const priority: number[] = []
@@ -53,7 +53,7 @@ export function colorFlowLine(line: string, source = line): string {
   const t = source.trimStart()
   // a plan waiting for approval is as urgent as a waiting slice
   const planWaits = t.startsWith('▸ Plan') && t.includes(' — ')
-  if (source.includes('← waiting for you') || t.startsWith('■') || source.startsWith('Claude: wait') || planWaits) return color.boldRed(line)
+  if (source.includes('← waiting for you') || (t.startsWith('■') && !source.includes('← done')) || source.startsWith('Claude: wait') || planWaits) return color.boldRed(line)
   if (t.startsWith('▸')) return color.boldYellow(line)
   if (t.startsWith('✓')) return color.green(line)
   if (source.startsWith('hece')) return color.bold(line)

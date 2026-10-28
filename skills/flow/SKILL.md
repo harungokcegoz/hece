@@ -39,12 +39,12 @@ Call `flow_set_phase` whenever the phase changes. `hece status` (and hece's pane
 - Then stop. Offer the picker (AskUserQuestion) with the first option exactly `Continue`, or tell the user to type `continue`. The plan is active only once the **user** approves it. hece tells you with a context line like `hece: the user approved the plan`. Your own messages never count as approval.
 
 ### before build
-After the user approves the plan, ask one AskUserQuestion with three questions:
+After the user approves the plan, and only if no slice has started, ask one AskUserQuestion with three questions:
 - mode: first option exactly `One by one`, then `Parallel`. Do not put `Continue` in this picker.
 - model: first option `delegate.build` (its value), then the other models.
 - effort: `medium`, `low`, `high`.
 
-Wait for `hece: the user chose one by one` or `hece: the user chose parallel`. No answer means one by one. Model and effort are not stored: remember them and pass them to every subagent dispatch. Never call `flow_set_plan` just to record them (it needs re-approval).
+Wait for `hece: the user chose one by one` or `hece: the user chose parallel`. No answer means one by one. The mode is `plan.mode` in `flow_get` (absent means one by one): read it there, don't rely on memory, e.g. after a plan change or compaction. If you ask late, hece replies `hece: the mode is already one by one; it can't change mid-build` (or `parallel`): keep that mode. Model and effort are not stored: remember them and pass them to every subagent dispatch. Never call `flow_set_plan` just to record them (it needs re-approval).
 
 ### build
 The main chat never edits code. Every slice goes to a subagent (Agent tool) with `model`, `effort`, and a prompt telling it to use the `optimize` pack and superpowers TDD.
@@ -52,9 +52,9 @@ The main chat never edits code. Every slice goes to a subagent (Agent tool) with
 #### one by one
 For slice n:
 1. `flow_start_slice(n)`.
-   Narrate as you go. Before each meaningful step (reading code to understand it, changing a file, running the tests), call `activity_note` with one plain sentence saying what you're doing and why, e.g. `activity_note("Saving only a hash of the reset token, so a DB leak can't reset passwords")`. No code, no file contents. The user sees these in hece's Activity panel.
+   Narrate as you go. Before each meaningful step (reading code to understand it, dispatching the subagent, reviewing its result), call `activity_note` with one plain sentence saying what you're doing and why, e.g. `activity_note("Saving only a hash of the reset token, so a DB leak can't reset passwords")`. No code, no file contents. The user sees these in hece's Activity panel.
 2. Dispatch this **one** slice to a subagent.
-3. Review the result yourself (spec, then quality) and fix problems before the user sees the slice.
+3. Review the result yourself (spec, then quality). Re-dispatch problems to the subagent to fix before the user sees the slice.
 4. `flow_finish_slice(n, summary, connects_to)`.
 5. Follow hece:slice-stop, then **stop**. Do not start slice n+1 until hece reports `hece: the user approved slice n` (or sends `[hece] event=continue`).
 
@@ -63,9 +63,9 @@ If a slice grows past its size, stop, propose a split with `flow_set_plan`, and 
 #### parallel
 1. Split the slices into waves. No two slices in a wave share a file in `files`; slices that overlap go in different waves, in plan order.
 2. `flow_start_slice` every slice in a wave, then dispatch that wave's subagents in one message.
-3. `flow_finish_slice` each slice as its subagent returns. Then start the next wave.
-4. When all are stopped, review them all, then give one report covering every slice (hece:slice-stop per slice, shortest depth) and **stop**.
-5. Approval is `hece: the user approved slices 1, 2, 3`. If they type `continue` early, hece says `hece: slices are still running; the user can approve once the batch is done`.
+3. As each subagent returns, review it (spec, then quality) and re-dispatch problems to a subagent to fix, then `flow_finish_slice` it. Then start the next wave.
+4. When all are stopped, give one report: hece:slice-stop steps 1–5 for each slice (shortest depth), then at most one check question and one Continue picker for the whole batch. **Stop.** One Continue approves every slice.
+5. A slice that outgrows its size waits until the batch is approved; then propose the plan change. Approval is `hece: the user approved slices 1, 2, 3`. If they type `continue` early, hece says `hece: slices are still running; the user can approve once the batch is done`.
 6. Redo: the user types `redo 2 4`. hece replies `hece: the user asked to redo slices 2, 4` (or `slice 2` for one). For each, call `flow_start_slice(n)`, then re-dispatch only those and stop again. If hece says `hece: say which slices to redo, e.g. redo 1 3 (waiting: 1, 2, 3)`, ask which.
 
 #### redo, one by one

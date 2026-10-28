@@ -532,7 +532,23 @@ describe('parallel build mode', () => {
   it('ignores the mode answer once a slice has started', () => {
     const seeded = three(['working', 'todo', 'todo'], 'one-by-one')
     seedFlow(root, seeded)
-    expect(handleHook(pick('Parallel'), ctx()).stdout).toBe('')
+    expect(text(handleHook(pick('Parallel'), ctx()))).toBe("hece: the mode is already one by one; it can't change mid-build")
+    expect(flow()).toEqual(seeded)
+    const par = three(['working', 'todo', 'todo'])
+    seedFlow(root, par)
+    expect(text(handleHook(pick('One by one'), ctx()))).toBe("hece: the mode is already parallel; it can't change mid-build")
+    expect(flow()).toEqual(par)
+  })
+
+  it('says nothing when a fork answers the mode mid-build', () => {
+    seedFlow(root, three(['working', 'todo', 'todo']))
+    expect(handleHook(pick('Parallel', 'other'), ctx()).stdout).toBe('')
+  })
+
+  it('says the plain still-running line on typed continue before any slice stopped', () => {
+    const seeded = three(['working', 'todo', 'todo'])
+    seedFlow(root, seeded)
+    expect(text(handleHook(typed('continue'), ctx()))).toBe('hece: slices are still running; the user can approve once the batch is done')
     expect(flow()).toEqual(seeded)
   })
 

@@ -103,6 +103,11 @@ describe('flowPanelLines', () => {
     }
     expect(stripAnsi(colorFlowLine('✓ Plan (2 slices)'))).toBe('✓ Plan (2 slices)')
   })
+  it('does not paint or pick a finished mid-batch row as waiting', () => {
+    expect(colorFlowLine('  ■ 1. A  ← done')).not.toContain('\x1b[1;31m')
+    const lines = ['hece · build', '▸ Build', '  ■ 1. A  ← done', '  ▸ 2. B', 'guards: on']
+    expect(fitFlowLines(lines, 40, 3)).toContain('  ▸ 2. B')
+  })
   it('keeps a cut status line red', () => {
     expect(stripAnsi(colorFlowLine('Claude: wait…'))).toBe('Claude: wait…')
     expect(colorFlowLine('Claude: wait…')).toContain('\x1b[1;31m')

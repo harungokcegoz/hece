@@ -4,7 +4,7 @@ import { readJson, writeJsonAtomic, appendEvent } from '../state/store.js'
 import { FlowState, BuildMode, emptyFlow } from '../flow/types.js'
 import { withDirLock } from '../util/dirlock.js'
 import { renderFlow } from '../flow/render.js'
-import { approve, requestRedo, clearCheckPending, chooseMode, batchRunning } from '../flow/flow.js'
+import { approve, requestRedo, clearCheckPending, chooseMode } from '../flow/flow.js'
 import { Prefs } from '../prefs/schema.js'
 import { describeCommand } from '../activity/describe.js'
 import { EDIT_TOOLS, decideTool, isContinueIntent, parseRedo, pickerMode, pickerApproved, pickerRedo } from '../guards/guards.js'
@@ -205,7 +205,12 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
 
   const recordMode = (via: string, mode: BuildMode) => {
     const r = updateFlow(() => (fromMain(via) ? chooseMode(flow, mode, ctx.now) : null))
-    if (!r.wrote) return none
+    if (!r.ran) return notRecorded('PostToolUse', 'the mode')
+    if (!r.wrote) {
+      // a main-session answer that came too late: tell the agent what the mode is, so it can't drift
+      const started = flow.plan?.slices.some(x => x.status !== 'todo')
+      return started && mainReason() === null ? say('PostToolUse', `hece: the mode is already ${flow.plan?.mode === 'parallel' ? 'parallel' : 'one by one'}; it can't change mid-build`) : none
+    }
     ev('mode_chosen', { mode, via })
     return say('PostToolUse', `hece: the user chose ${mode === 'parallel' ? 'parallel' : 'one by one'}`)
   }
@@ -219,7 +224,8 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
       return res.approved ? res.state : null
     })
     if (!r.ran) return notRecorded(hookEventName, 'the approval')
-    if (!approved) return batchRunning(flow) && mainReason() === null ? say(hookEventName, 'hece: slices are still running; the user can approve once the batch is done') : none
+    const running = flow.plan?.approved && flow.plan.mode === 'parallel' && flow.plan.slices.some(x => x.status === 'todo' || x.status === 'working')
+    if (!approved) return running && mainReason() === null ? say(hookEventName, 'hece: slices are still running; the user can approve once the batch is done') : none
     const text =
       approved.what === 'plan' ? 'hece: the user approved the plan'
       : approved.what === 'slices' ? `hece: the user approved slices ${approved.ns.join(', ')}`

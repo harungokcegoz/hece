@@ -3,7 +3,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { CLI, tmpProject, testEnv, runCli } from '../helpers.js'
+import { emptyFlow } from '../../src/flow/types.js'
+import { CLI, tmpProject, testEnv, runCli, seedFlow } from '../helpers.js'
 import { TOOL_NAMES } from '../../src/mcp/server.js'
 import { readEvents, readJson } from '../../src/state/store.js'
 import { statePaths } from '../../src/state/paths.js'
@@ -150,6 +151,19 @@ describe('hece mcp', () => {
     expect((await call(c, 'activity_note', { text: '  checking   how login works ' })).text).toBe('noted')
     const notes = readEvents(statePaths(root).events).filter((e) => e.event === 'note')
     expect(notes).toEqual([expect.objectContaining({ event: 'note', text: 'checking how login works', slice: null })])
+  })
+
+  it('activity_note tags the working slice, or none while several work', async () => {
+    const root = tmpProject()
+    const c = await connect(root)
+    const sl = (n: number, status: string) => ({ n, title: 't', files: [], kind: 'routine', status })
+    const base = { ...emptyFlow(), phase: 'build', currentSlice: 1 }
+    const seed = (statuses: string[]) => seedFlow(root, { ...base, plan: { approved: true, changed: false, mode: 'parallel', slices: statuses.map((s, i) => sl(i + 1, s)) } } as never)
+    seed(['working', 'working'])
+    await call(c, 'activity_note', { text: 'a' })
+    seed(['todo', 'working'])
+    await call(c, 'activity_note', { text: 'b' })
+    expect(readEvents(statePaths(root).events).filter((e) => e.event === 'note').map((e) => e.slice)).toEqual([null, 2])
   })
 
   it('activity_note never tells the agent to start a flow', async () => {
