@@ -64,17 +64,23 @@ export function installedPlugins(env: NodeJS.ProcessEnv, home: string = os.homed
   }
 }
 
-export async function runDoctor(): Promise<void> {
-  const { prefs, errors } = loadPrefs(process.env, resolveRoot(process.env))
-  const checks = runChecks({
+export function systemChecks(optimize: Prefs['optimize'], prefsErrors: string[]): Check[] {
+  return runChecks({
     nodeVersion: process.version,
-    onPath: (bin) => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0,
+    onPath: systemOnPath,
     exists: fs.existsSync,
     plugins: installedPlugins(process.env),
-    prefsErrors: errors,
+    prefsErrors,
     pkgRoot: pluginRoot(),
-    optimize: prefs.optimize,
+    optimize,
   })
+}
+
+export const systemOnPath = (bin: string): boolean => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0
+
+export async function runDoctor(): Promise<void> {
+  const { prefs, errors } = loadPrefs(process.env, resolveRoot(process.env))
+  const checks = systemChecks(prefs.optimize, errors)
   process.stdout.write(formatChecks(checks))
   if (failed(checks)) process.exitCode = 1
 }
