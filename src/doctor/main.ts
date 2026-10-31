@@ -12,6 +12,7 @@ export interface DoctorDeps {
   nodeVersion: string
   onPath(bin: string): boolean
   exists(file: string): boolean
+  read(file: string): string
   plugins: Set<string> | null
   prefsErrors: string[]
   pkgRoot: string
@@ -24,6 +25,23 @@ const INSTALL: Record<string, string> = {
   caveman: '/plugin marketplace add JuliusBrussee/caveman, then /plugin install caveman@caveman',
 }
 
+/** What is wrong with the plugin files, or undefined when plugin.json and hooks.json point at dist/cli.js. */
+function wiringProblem(d: DoctorDeps): string | undefined {
+  const parts = [
+    { file: path.join(d.pkgRoot, '.claude-plugin', 'plugin.json'), part: (j: { mcpServers?: unknown }) => j.mcpServers },
+    { file: path.join(d.pkgRoot, 'hooks', 'hooks.json'), part: (j: { hooks?: unknown }) => j.hooks },
+  ]
+  for (const { file, part } of parts) {
+    const name = path.basename(file)
+    if (!d.exists(file)) return `reinstall hece (${name} missing)`
+    try {
+      if (!JSON.stringify(part(JSON.parse(d.read(file))) ?? null).includes('dist/cli.js')) return `reinstall hece (${name} does not run dist/cli.js)`
+    } catch {
+      return `reinstall hece (${name} is not valid JSON)`
+    }
+  }
+}
+
 export function runChecks(d: DoctorDeps): Check[] {
   const pluginCheck = (name: string, label: string): Check => {
     const ok = d.plugins?.has(name) ?? false
@@ -33,7 +51,7 @@ export function runChecks(d: DoctorDeps): Check[] {
   const tmux = d.onPath('tmux')
   const built = d.exists(path.join(d.pkgRoot, 'dist', 'cli.js'))
   const claude = d.onPath('claude')
-  const wired = d.exists(path.join(d.pkgRoot, '.claude-plugin', 'plugin.json')) && d.exists(path.join(d.pkgRoot, 'hooks', 'hooks.json'))
+  const wiring = wiringProblem(d)
   return [
     { ok: node >= 20, label: `Node ${d.nodeVersion} (need 20 or newer)`, ...(node >= 20 ? {} : { fix: 'install Node 20 or newer' }) },
     { ok: tmux, label: 'tmux', optional: true, ...(tmux ? {} : { fix: 'install tmux for the three-pane window' }) },
@@ -41,8 +59,8 @@ export function runChecks(d: DoctorDeps): Check[] {
     { ok: claude, label: 'claude on PATH', ...(claude ? {} : { fix: 'install Claude Code' }) },
     pluginCheck('superpowers', 'superpowers plugin'),
     pluginCheck(d.optimize, `${d.optimize} plugin`),
-    { ok: d.prefsErrors.length === 0, label: 'preferences', ...(d.prefsErrors.length ? { fix: d.prefsErrors.join('; ') } : {}) },
-    { ok: wired, label: 'plugin wiring', ...(wired ? {} : { fix: 'reinstall hece (plugin.json or hooks.json missing)' }) },
+    { ok: d.prefsErrors.length === 0, label: 'preferences', ...(d.prefsErrors.length ? { fix: d.prefsErrors.join('\n  ') } : {}) },
+    { ok: !wiring, label: 'plugin wiring', ...(wiring ? { fix: wiring } : {}) },
   ]
 }
 
@@ -57,7 +75,8 @@ export function installedPlugins(env: NodeJS.ProcessEnv, home: string = os.homed
   try {
     const file = path.join(env.CLAUDE_CONFIG_DIR || path.join(home, '.claude'), 'plugins', 'installed_plugins.json')
     const json = JSON.parse(fs.readFileSync(file, 'utf8'))
-    return new Set(Object.keys(json.plugins).map((k) => k.split('@')[0]))
+    // readable but an unexpected shape: nothing installed, not "couldn't read"
+    return new Set(Object.keys(json?.plugins ?? {}).map((k) => k.split('@')[0]))
   } catch {
     return null
   }
@@ -68,6 +87,7 @@ export function systemChecks(optimize: Prefs['optimize'], prefsErrors: string[])
     nodeVersion: process.version,
     onPath: systemOnPath,
     exists: fs.existsSync,
+    read: (f) => fs.readFileSync(f, 'utf8'),
     plugins: installedPlugins(process.env),
     prefsErrors,
     pkgRoot: pluginRoot(),
@@ -75,11 +95,13 @@ export function systemChecks(optimize: Prefs['optimize'], prefsErrors: string[])
   })
 }
 
-export function systemOnPath(bin: string): boolean {
+export function systemOnPath(rawBin: string): boolean {
+  // launch and frame honour these overrides, so the check must too
+  const bin = (rawBin === 'claude' ? process.env.HECE_CLAUDE_BIN : rawBin === 'tmux' ? process.env.HECE_TMUX_BIN : '') || rawBin
+  const isExe = (file: string) => { try { fs.accessSync(file, fs.constants.X_OK); return fs.statSync(file).isFile() } catch { return false } }
+  if (bin.includes('/') || bin.includes(path.sep)) return isExe(bin)
   const exts = process.platform === 'win32' ? ['', ...(process.env.PATHEXT ?? '.EXE;.CMD').split(';')] : ['']
-  return (process.env.PATH ?? '').split(path.delimiter).some((dir) => dir && exts.some((e) => {
-    try { fs.accessSync(path.join(dir, bin + e), fs.constants.X_OK); return fs.statSync(path.join(dir, bin + e)).isFile() } catch { return false }
-  }))
+  return (process.env.PATH ?? '').split(path.delimiter).some((dir) => dir && exts.some((e) => isExe(path.join(dir, bin + e))))
 }
 
 export async function runDoctor(): Promise<void> {

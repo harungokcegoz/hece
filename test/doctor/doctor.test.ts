@@ -5,8 +5,11 @@ import path from 'node:path'
 import { systemOnPath, runChecks, formatChecks, failed, installedPlugins, type DoctorDeps } from '../../src/doctor/main.js'
 import { runCli, tmpProject } from '../helpers.js'
 
+const HOOKS = '{"hooks":{"Stop":[{"hooks":[{"command":"node \\"${CLAUDE_PLUGIN_ROOT}/dist/cli.js\\" hook"}]}]}}'
+const PLUGIN = '{"mcpServers":{"hece":{"command":"node","args":["${CLAUDE_PLUGIN_ROOT}/dist/cli.js","mcp"]}}}'
 const good = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
   nodeVersion: 'v22.1.0', onPath: () => true, exists: () => true,
+  read: (f) => (f.endsWith('hooks.json') ? HOOKS : PLUGIN),
   plugins: new Set(['superpowers', 'ponytail']), prefsErrors: [], pkgRoot: '/p', optimize: 'ponytail', ...o,
 })
 
@@ -27,6 +30,30 @@ describe('runChecks', () => {
   })
   it('unreadable plugin list', () => {
     expect(runChecks(good({ plugins: null }))[4].fix).toContain("couldn't read Claude Code's plugin list")
+  })
+  it('each prefs error gets its own indented line', () => {
+    const c = runChecks(good({ prefsErrors: ['one', 'two'] }))
+    expect(formatChecks(c)).toContain('✗ preferences\n  one\n  two\n')
+  })
+  it('plugin wiring must point at dist/cli.js and parse', () => {
+    const wiring = (o: Partial<DoctorDeps>) => runChecks(good(o))[7]
+    expect(wiring({}).ok).toBe(true)
+    expect(wiring({ read: (f) => (f.endsWith('hooks.json') ? '{"hooks":{}}' : PLUGIN) }).ok).toBe(false)
+    expect(wiring({ read: (f) => (f.endsWith('hooks.json') ? HOOKS : '{"mcpServers":{}}') }).ok).toBe(false)
+    const bad = wiring({ read: (f) => (f.endsWith('hooks.json') ? '{oops' : PLUGIN) })
+    expect(bad.ok).toBe(false)
+    expect(bad.fix).toContain('hooks.json')
+  })
+  it('plugin wiring on real temp dirs', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-wire-'))
+    fs.mkdirSync(path.join(root, '.claude-plugin'))
+    fs.mkdirSync(path.join(root, 'hooks'))
+    fs.writeFileSync(path.join(root, '.claude-plugin', 'plugin.json'), PLUGIN)
+    fs.writeFileSync(path.join(root, 'hooks', 'hooks.json'), '{nope')
+    const real = { exists: fs.existsSync, read: (f: string) => fs.readFileSync(f, 'utf8'), pkgRoot: root }
+    expect(runChecks(good(real))[7]).toMatchObject({ ok: false, fix: expect.stringContaining('not valid JSON') })
+    fs.writeFileSync(path.join(root, 'hooks', 'hooks.json'), HOOKS)
+    expect(runChecks(good(real))[7].ok).toBe(true)
   })
   it('old node fails', () => {
     expect(runChecks(good({ nodeVersion: 'v18.20.0' }))[0].ok).toBe(false)
@@ -59,6 +86,12 @@ describe('installedPlugins', () => {
     expect(installedPlugins({ CLAUDE_CONFIG_DIR: dir })).toEqual(new Set(['ponytail']))
     expect(installedPlugins({ CLAUDE_CONFIG_DIR: path.join(dir, 'nope') })).toBeNull()
   })
+  it('a readable file of the wrong shape is an empty set, not unreadable', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-cc-'))
+    fs.mkdirSync(path.join(dir, 'plugins'))
+    fs.writeFileSync(path.join(dir, 'plugins', 'installed_plugins.json'), '{"version":2}')
+    expect(installedPlugins({ CLAUDE_CONFIG_DIR: dir })).toEqual(new Set())
+  })
 })
 
 describe('hece doctor', () => {
@@ -87,5 +120,21 @@ describe('systemOnPath', () => {
       expect(systemOnPath('plain-x')).toBe(false)
       expect(systemOnPath('nope-x')).toBe(false)
     } finally { process.env.PATH = old }
+  })
+  it('honours HECE_CLAUDE_BIN and HECE_TMUX_BIN', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-path-'))
+    const fake = path.join(dir, 'myclaude')
+    fs.writeFileSync(fake, '#!/bin/sh\n', { mode: 0o755 })
+    const old = { ...process.env }
+    process.env.PATH = path.join(dir, 'empty')
+    try {
+      expect(systemOnPath('claude')).toBe(false)
+      process.env.HECE_CLAUDE_BIN = fake
+      process.env.HECE_TMUX_BIN = fake
+      expect(systemOnPath('claude')).toBe(true)
+      expect(systemOnPath('tmux')).toBe(true)
+      process.env.HECE_TMUX_BIN = path.join(dir, 'nope')
+      expect(systemOnPath('tmux')).toBe(false)
+    } finally { process.env = old }
   })
 })
