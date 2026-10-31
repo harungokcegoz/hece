@@ -7,6 +7,7 @@ import { CUSTOM_KEYS, nextRaw, promoteToCustom, readGlobal, saveGlobal, startPre
 import type { GlobalFile } from '../prefs/save.js'
 import type { Prefs } from '../prefs/schema.js'
 import { resolveRoot } from '../state/paths.js'
+import { interactiveClaude } from '../frame/main.js'
 import { PREFS_NAMES, SCREENS, setKey } from './screens.js'
 import type { Screen, SetupContext } from './screens.js'
 import { ask, terminalIo } from './tui.js'
@@ -141,4 +142,20 @@ export async function runPrefs(argv: string[]): Promise<void> {
   const d = realDeps()
   if (!d) return
   if ((await runPrefsEdit(d, argv[0])) === 'aborted') process.exitCode = 130
+}
+
+export function needsFirstRun(argv: string[], o: { stdinTTY: boolean; stdoutTTY: boolean; globalExists: boolean }): boolean {
+  return !o.globalExists && interactiveClaude(argv.filter((a) => a !== '--no-frame'), o)
+}
+
+/** Runs the wizard before the first interactive launch. Returns false when the user aborted (Ctrl-C). */
+export async function maybeFirstRun(argv: string[]): Promise<boolean> {
+  const file = prefsFiles(process.env, resolveRoot(process.env)).global
+  const tty = { stdinTTY: Boolean(process.stdin.isTTY), stdoutTTY: Boolean(process.stdout.isTTY) }
+  if (!needsFirstRun(argv, { ...tty, globalExists: fs.existsSync(file) })) return true
+  const d = realDeps()
+  if (!d) return true
+  if ((await runWizard(d, { firstRun: true })) !== 'aborted') return true
+  process.exitCode = 130
+  return false
 }

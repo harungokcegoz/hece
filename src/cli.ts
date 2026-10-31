@@ -5,7 +5,7 @@ import { runHook } from './hooks/main.js'
 import { runLaunch } from './launch/main.js'
 import { runMcp } from './mcp/main.js'
 import { runPanel } from './panels/main.js'
-import { runPrefs, runSetup } from './setup/main.js'
+import { maybeFirstRun, runPrefs, runSetup } from './setup/main.js'
 import { runStatus } from './status/main.js'
 
 const USAGE = `usage: hece [claude args…]          open the hece window: Activity · Claude · Flow
@@ -33,6 +33,7 @@ async function main(argv: string[]): Promise<void> {
     process.stdout.write(USAGE)
     return
   }
+  if (!(await maybeFirstRun(argv))) return
   if (argv.includes('--no-frame')) return runLaunch(argv.filter((a) => a !== '--no-frame'))
   return runFrame(argv)
 }
