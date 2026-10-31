@@ -2,8 +2,8 @@ import fs from 'node:fs'
 import YAML from 'yaml'
 import { formatChecks, installedPlugins, systemChecks, systemOnPath } from '../doctor/main.js'
 import type { Check } from '../doctor/main.js'
-import { prefsFiles } from '../prefs/load.js'
-import { nextRaw, promoteToCustom, readGlobal, saveGlobal, startPrefs } from '../prefs/save.js'
+import { loadPrefs, prefsFiles } from '../prefs/load.js'
+import { CUSTOM_KEYS, nextRaw, promoteToCustom, readGlobal, saveGlobal, startPrefs } from '../prefs/save.js'
 import type { GlobalFile } from '../prefs/save.js'
 import type { Prefs } from '../prefs/schema.js'
 import { resolveRoot } from '../state/paths.js'
@@ -12,7 +12,7 @@ import type { Screen, SetupContext } from './screens.js'
 import { ask, terminalIo } from './tui.js'
 import type { Io } from './tui.js'
 
-export interface SetupDeps { io: Io; file: string; ctx: SetupContext; doctor(p?: Prefs): Check[]; out(s: string): void }
+export interface SetupDeps { io: Io; file: string; ctx: SetupContext; doctor(): Check[]; out(s: string): void }
 
 const SAVED = 'Defaults saved. Change them any time with `hece prefs`.'
 
@@ -20,11 +20,17 @@ type Stop = 'cancelled' | 'aborted'
 const stop = (k: 'quit' | 'abort' | 'back'): Stop => (k === 'abort' ? 'aborted' : 'cancelled')
 
 /** Show screens in order with `b` history. Returns the answers, or why it stopped. */
-async function walk(d: SetupDeps, screens: readonly Screen[], p: Prefs, useWhen: boolean): Promise<{ p: Prefs; touched: string[] } | Stop> {
+async function walk<T>(d: SetupDeps, screens: readonly Screen[], p: Prefs, useWhen: boolean, finale: (p: Prefs, touched: string[]) => Promise<T | 'back' | Stop>): Promise<T | Stop> {
   const touched: string[] = []
   const stack: number[] = []
   let i = 0
-  while (i < screens.length) {
+  for (;;) {
+    if (i >= screens.length) {
+      const f = await finale(p, touched)
+      if (f !== 'back') return f
+      if (stack.length) i = stack.pop()!
+      continue
+    }
     const s = screens[i]
     if (useWhen && s.when && !s.when(p)) { i++; continue }
     const opts = s.options(p, d.ctx)
@@ -39,7 +45,6 @@ async function walk(d: SetupDeps, screens: readonly Screen[], p: Prefs, useWhen:
     }
     i++
   }
-  return { p, touched }
 }
 
 function blocked(d: SetupDeps, g: GlobalFile): Promise<unknown> {
@@ -55,24 +60,23 @@ export async function runWizard(d: SetupDeps, opts: { firstRun: boolean }): Prom
     }
     d.ctx = { ...d.ctx, fileErrors: [...d.ctx.fileErrors, ...g.errors] }
     const start = startPrefs(g)
-    const answers = await walk(d, SCREENS, start, true)
-    if (answers === 'aborted') return 'aborted'
-    if (answers === 'cancelled') {
-      if (!opts.firstRun) return 'cancelled'
+    const result = await walk<'saved'>(d, SCREENS, start, true, async (p, touched) => {
+      const raw = nextRaw(g.raw, p, touched)
+      const summary = [...YAML.stringify(raw).trimEnd().split('\n'), '', g.path, ...(g.hadComments ? ['', 'Comments in this file will be lost.'] : [])]
+      const r = await ask(d.io, 'Save', summary, [{ label: 'Save', value: true }], 0)
+      if (r.kind === 'back') return 'back'
+      if (r.kind !== 'pick') return stop(r.kind)
+      saveGlobal(g, raw)
+      // the file is saved; whatever happens on this screen, the result stays 'saved'
+      await ask(d.io, 'Check', formatChecks(d.doctor()).trimEnd().split('\n'), [{ label: 'Done', value: true }], 0)
+      return 'saved'
+    })
+    if (result === 'cancelled' && opts.firstRun) {
       saveGlobal(g, nextRaw(g.raw, { ...start, preset: 'involved' }, []))
       d.out(SAVED)
       return 'skipped'
     }
-    const raw = nextRaw(g.raw, answers.p, answers.touched)
-    const text = YAML.stringify(raw)
-    const summary = [...text.trimEnd().split('\n'), '', g.path, ...(g.hadComments ? ['', 'Comments in this file will be lost.'] : [])]
-    for (const [title, lines] of [['Save', summary], ['Check', formatChecks(d.doctor(answers.p)).trimEnd().split('\n')]] as const) {
-      const r = await ask(d.io, title, lines, [{ label: title === 'Save' ? 'Continue' : 'Save', value: true }], 0)
-      if (r.kind === 'abort') return 'aborted'
-      if (r.kind !== 'pick') return 'cancelled'
-    }
-    saveGlobal(g, raw)
-    return 'saved'
+    return result
   } finally {
     d.io.close()
   }
@@ -95,10 +99,13 @@ export async function runPrefsEdit(d: SetupDeps, name?: string): Promise<'saved'
       d.out(`Unknown name "${name}". Valid names: ${PREFS_NAMES.join(', ')}`)
       return 'cancelled'
     }
-    const answers = await walk(d, screens, startPrefs(g), false)
+    const start = startPrefs(g)
+    const answers = await walk<{ p: Prefs; touched: string[] }>(d, screens, start, false, async (p, touched) => ({ p, touched }))
     if (typeof answers === 'string') return answers
-    const { prefs, touched } = promoteToCustom(answers.p, answers.touched)
-    saveGlobal(g, nextRaw(g.raw, prefs, touched))
+    // leaving a fixed preset for custom pins the old preset's values
+    const touched = start.preset !== 'custom' && answers.p.preset === 'custom' ? [...answers.touched, ...CUSTOM_KEYS] : answers.touched
+    const { prefs, touched: all } = promoteToCustom(answers.p, touched)
+    saveGlobal(g, nextRaw(g.raw, prefs, all))
     return 'saved'
   } finally {
     d.io.close()
@@ -116,7 +123,10 @@ function realDeps(): SetupDeps | undefined {
     io: terminalIo(),
     file,
     ctx: { onPath: systemOnPath, plugins: installedPlugins(process.env), fileErrors: [] },
-    doctor: (p) => systemChecks(p?.optimize ?? 'ponytail', []),
+    doctor: () => {
+      const { prefs, errors } = loadPrefs(process.env, resolveRoot(process.env))
+      return systemChecks(prefs.optimize, errors)
+    },
     out: (s) => void process.stdout.write(s + '\n'),
   }
 }

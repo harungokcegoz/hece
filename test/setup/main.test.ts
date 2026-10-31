@@ -96,7 +96,50 @@ describe('runWizard', () => {
   })
 })
 
+describe('summary and doctor screens', () => {
+  const BEFORE_SUMMARY = THROUGH - 2
+  it('b on Summary goes back to the last screen with its answer kept', async () => {
+    // layout-right: down (sessions), Enter -> summary, b -> layout-right again, Enter keeps it
+    const keys = [...enters(BEFORE_SUMMARY - 1), k('down'), enter, k('b'), enter, enter, enter]
+    const t = setup(keys)
+    expect(await runWizard(t.d, { firstRun: false })).toBe('saved')
+    expect(read(t.file)).toEqual({ preset: 'involved', layout: { right: expect.any(String) } })
+  })
+  it('first-run Esc on Summary saves defaults', async () => {
+    const t = setup([...enters(BEFORE_SUMMARY), esc])
+    expect(await runWizard(t.d, { firstRun: true })).toBe('skipped')
+    expect(read(t.file)).toEqual({ preset: 'involved' })
+    expect(t.outs.join()).toContain('Defaults saved.')
+  })
+  it('non-first-run Esc on Summary writes nothing', async () => {
+    const t = setup([...enters(BEFORE_SUMMARY), esc])
+    expect(await runWizard(t.d, { firstRun: false })).toBe('cancelled')
+    expect(fs.existsSync(t.file)).toBe(false)
+  })
+  it('doctor runs after the file is saved', async () => {
+    const t = setup([...enters(BEFORE_SUMMARY + 2)])
+    let seen: boolean | undefined
+    t.d.doctor = () => { seen = fs.existsSync(t.file); return [] }
+    await runWizard(t.d, { firstRun: false })
+    expect(seen).toBe(true)
+  })
+  it('Summary Enter saves; Esc on Doctor still returns saved', async () => {
+    const t = setup([...enters(BEFORE_SUMMARY + 1), esc])
+    expect(await runWizard(t.d, { firstRun: false })).toBe('saved')
+    expect(read(t.file)).toEqual({ preset: 'involved' })
+  })
+})
+
 describe('runPrefsEdit', () => {
+  it('preset learning -> custom keeps learning values', async () => {
+    const t = setup([k('3'), enter], 'preset: learning\n')
+    expect(await runPrefsEdit(t.d, 'preset')).toBe('saved')
+    const got = resolvePrefs([{ raw: read(t.file), source: 'x' }]).prefs
+    expect(got.preset).toBe('custom')
+    expect(got.check_questions).toBe('non-routine')
+    expect(got.flow_recap).toBe(true)
+    expect(got.review.show_minor).toBe(true)
+  })
   it('check-questions under learning promotes to custom', async () => {
     const t = setup([k('3'), enter], 'preset: learning\n')
     expect(await runPrefsEdit(t.d, 'check-questions')).toBe('saved')
