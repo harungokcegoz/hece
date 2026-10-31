@@ -1,7 +1,6 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
 import { pluginRoot } from '../launch/main.js'
 import { loadPrefs } from '../prefs/load.js'
 import type { Prefs } from '../prefs/schema.js'
@@ -76,7 +75,12 @@ export function systemChecks(optimize: Prefs['optimize'], prefsErrors: string[])
   })
 }
 
-export const systemOnPath = (bin: string): boolean => spawnSync(bin, ['--version'], { stdio: 'ignore' }).status === 0
+export function systemOnPath(bin: string): boolean {
+  const exts = process.platform === 'win32' ? ['', ...(process.env.PATHEXT ?? '.EXE;.CMD').split(';')] : ['']
+  return (process.env.PATH ?? '').split(path.delimiter).some((dir) => dir && exts.some((e) => {
+    try { fs.accessSync(path.join(dir, bin + e), fs.constants.X_OK); return fs.statSync(path.join(dir, bin + e)).isFile() } catch { return false }
+  }))
+}
 
 export async function runDoctor(): Promise<void> {
   const { prefs, errors } = loadPrefs(process.env, resolveRoot(process.env))

@@ -25,7 +25,7 @@ describe('tui', () => {
   it('renders numbered options, marks the cursor, shows its preview and the key hint', () => {
     const out = renderScreen('Preset', ['pick one'], [{ ...opts[0], preview: ['example'] }, opts[2]], 0, 40).map(stripAnsi)
     expect(out).toEqual(expect.arrayContaining(['› 1. a', '  2. c', 'example']))
-    expect(out.at(-1)).toMatch(/↑↓.*Enter.*b back.*Esc/)
+    expect(out.at(-1)).toMatch(/↑↓\/jk.*Enter.*b back.*Esc/)
   })
   it('fits narrow and CJK widths', () => {
     for (const w of [20, 39]) for (const l of renderScreen('設定 settings', ['長い説明文がここに入ります long text here'], opts, 0, w)) expect(displayWidth(stripAnsi(l))).toBeLessThanOrEqual(w)

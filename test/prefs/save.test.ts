@@ -69,3 +69,14 @@ describe('global file', () => {
     expect(readGlobal(f).raw).toEqual({ preset: 'learning' })
   })
 })
+
+describe('saveGlobal symlink', () => {
+  it('writes through a symlink and keeps it', () => {
+    const target = tmp('preset: involved\n')
+    const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hece-link-')), 'preferences.yaml')
+    fs.symlinkSync(target, link)
+    saveGlobal(readGlobal(link), { preset: 'learning' })
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(fs.readFileSync(target, 'utf8')).toContain('learning')
+  })
+})

@@ -3,7 +3,7 @@ import YAML from 'yaml'
 import { formatChecks, installedPlugins, systemChecks, systemOnPath } from '../doctor/main.js'
 import type { Check } from '../doctor/main.js'
 import { loadPrefs, prefsFiles } from '../prefs/load.js'
-import { CUSTOM_KEYS, nextRaw, promoteToCustom, readGlobal, saveGlobal, startPrefs } from '../prefs/save.js'
+import { CUSTOM_KEYS, flatten, nextRaw, promoteToCustom, readGlobal, saveGlobal, startPrefs } from '../prefs/save.js'
 import type { GlobalFile } from '../prefs/save.js'
 import type { Prefs } from '../prefs/schema.js'
 import { resolveRoot } from '../state/paths.js'
@@ -16,6 +16,20 @@ import type { Io } from './tui.js'
 export interface SetupDeps { io: Io; file: string; ctx: SetupContext; doctor(): Check[]; out(s: string): void }
 
 const SAVED = 'Defaults saved. Change them any time with `hece prefs`.'
+
+/** Clears the last frame so the message doesn't land on its key-hint line. */
+const say = (d: SetupDeps, s: string) => { d.io.write('\x1b[2J\x1b[H'); d.out(s) }
+
+/** Runs a save-capable flow; a failure becomes one stderr line, not a stack trace. */
+export async function guarded<T>(file: string, fn: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await fn()
+  } catch (err) {
+    const why = (err as NodeJS.ErrnoException).code ?? (err as Error).message
+    process.stderr.write(`hece: couldn't save ${file}: ${why}; run hece setup later\n`)
+    return undefined
+  }
+}
 
 type Stop = 'cancelled' | 'aborted'
 const stop = (k: 'quit' | 'abort' | 'back'): Stop => (k === 'abort' ? 'aborted' : 'cancelled')
@@ -74,7 +88,7 @@ export async function runWizard(d: SetupDeps, opts: { firstRun: boolean }): Prom
     })
     if (result === 'cancelled' && opts.firstRun) {
       saveGlobal(g, nextRaw(g.raw, { ...start, preset: 'involved' }, []))
-      d.out(SAVED)
+      say(d, SAVED)
       return 'skipped'
     }
     return result
@@ -97,14 +111,17 @@ export async function runPrefsEdit(d: SetupDeps, name?: string): Promise<'saved'
     }
     const screens = SCREENS.filter((s) => s.group === name && s.group !== 'intro')
     if (!screens.length) {
-      d.out(`Unknown name "${name}". Valid names: ${PREFS_NAMES.join(', ')}`)
+      say(d, `Unknown name "${name}". Valid names: ${PREFS_NAMES.join(', ')}`)
       return 'cancelled'
     }
     const start = startPrefs(g)
     const answers = await walk<{ p: Prefs; touched: string[] }>(d, screens, start, false, async (p, touched) => ({ p, touched }))
     if (typeof answers === 'string') return answers
     // leaving a fixed preset for custom pins the old preset's values
-    const touched = start.preset !== 'custom' && answers.p.preset === 'custom' ? [...answers.touched, ...CUSTOM_KEYS] : answers.touched
+    const flat = flatten(start)
+    const changed = answers.touched.filter((k) => flatten(answers.p)[k] !== flat[k])
+    if (!changed.length) return 'saved'
+    const touched = start.preset !== 'custom' && answers.p.preset === 'custom' ? [...changed, ...CUSTOM_KEYS] : changed
     const { prefs, touched: all } = promoteToCustom(answers.p, touched)
     saveGlobal(g, nextRaw(g.raw, prefs, all))
     return 'saved'
@@ -135,13 +152,17 @@ function realDeps(): SetupDeps | undefined {
 export async function runSetup(_argv: string[]): Promise<void> {
   const d = realDeps()
   if (!d) return
-  if ((await runWizard(d, { firstRun: !fs.existsSync(d.file) })) === 'aborted') process.exitCode = 130
+  const r = await guarded(d.file, () => runWizard(d, { firstRun: !fs.existsSync(d.file) }))
+  if (r === undefined) process.exitCode = 1
+  else if (r === 'aborted') process.exitCode = 130
 }
 
 export async function runPrefs(argv: string[]): Promise<void> {
   const d = realDeps()
   if (!d) return
-  if ((await runPrefsEdit(d, argv[0])) === 'aborted') process.exitCode = 130
+  const r = await guarded(d.file, () => runPrefsEdit(d, argv[0]))
+  if (r === undefined) process.exitCode = 1
+  else if (r === 'aborted') process.exitCode = 130
 }
 
 export function needsFirstRun(argv: string[], o: { stdinTTY: boolean; stdoutTTY: boolean; globalExists: boolean }): boolean {
@@ -155,7 +176,8 @@ export async function maybeFirstRun(argv: string[]): Promise<boolean> {
   if (!needsFirstRun(argv, { ...tty, globalExists: fs.existsSync(file) })) return true
   const d = realDeps()
   if (!d) return true
-  if ((await runWizard(d, { firstRun: true })) !== 'aborted') return true
+  // a failed save must not keep Claude from starting
+  if ((await guarded(file, () => runWizard(d, { firstRun: true }))) !== 'aborted') return true
   process.exitCode = 130
   return false
 }

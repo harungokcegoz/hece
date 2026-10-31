@@ -101,5 +101,6 @@ export function promoteToCustom(p: Prefs, touched: readonly string[]): { prefs: 
 
 export function saveGlobal(g: GlobalFile, raw: Obj): void {
   if (g.error) throw new Error(`not saving over ${g.path}: ${g.error}`)
-  writeFileAtomic(g.path, YAML.stringify(raw))
+  // write through a symlinked file (dotfiles/stow) instead of replacing the link
+  writeFileAtomic(fs.existsSync(g.path) ? fs.realpathSync(g.path) : g.path, YAML.stringify(raw))
 }

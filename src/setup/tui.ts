@@ -47,7 +47,7 @@ export function renderScreen(title: string, lines: string[], options: Option[], 
     for (const r of rows) out.push(o.disabled ? color.dim(r) : on ? color.cyan(r) : r)
     if (on && o.preview) for (const p of o.preview) for (const r of wrapLine(p, width)) out.push(color.dim(r))
   })
-  out.push('', color.dim(fitLine('↑↓ move · Enter · b back · Esc quit', width)))
+  out.push('', color.dim(fitLine('↑↓/jk move · Enter · b back · Esc quit', width)))
   return out
 }
 

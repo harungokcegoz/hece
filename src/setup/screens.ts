@@ -1,6 +1,7 @@
 import type { Prefs } from '../prefs/schema.js'
 import { presetDefaults } from '../prefs/schema.js'
 import { VENDORS } from '../prefs/vendors.js'
+import { fitLine } from '../panels/fit.js'
 import type { Option } from './tui.js'
 
 export interface SetupContext { onPath(bin: string): boolean; plugins: Set<string> | null; fileErrors: string[] }
@@ -53,11 +54,17 @@ function slicePreview(depth: Prefs['slice_stop']['depth'], question: boolean): s
   return [...body, ...(question ? ['Q: why a controlled input?'] : []), 'Continue?']
 }
 
+const cur = (p: Prefs, key: string): string | undefined => {
+  const v = key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], p)
+  return typeof v === 'string' && v !== 'default' ? v : undefined
+}
 const choice = (id: string, key: string, title: string, q: string, list: (p: Prefs) => readonly string[], orchestrator: boolean): Screen => ({
   id, group: 'models', key, title,
   lines: () => [q],
   options: (p) => [
     ...(orchestrator ? [opt('default', "Claude Code's own setting")] : []),
+    // a hand-edited value outside the vendor list stays the first, pre-selected option
+    ...(cur(p, key) && !list(p).includes(cur(p, key)!) ? [opt(cur(p, key)!, fitLine(cur(p, key)!, 30), 'current')] : []),
     ...list(p).map((m) => opt(m, m)),
   ],
 })
@@ -144,4 +151,5 @@ export const SCREENS: readonly Screen[] = [
   widgets('layout-right', 'layout.right', 'Right pane'),
 ]
 
-export const PREFS_NAMES: readonly string[] = [...new Set(SCREENS.map((s) => s.group))].filter((g) => g !== 'intro')
+const MAIN = ['agent', 'preset', 'skills', 'models', 'guards', 'layout']
+export const PREFS_NAMES: readonly string[] = [...MAIN, ...new Set(SCREENS.map((s) => s.group))].filter((g, i, a) => g !== 'intro' && a.indexOf(g) === i)

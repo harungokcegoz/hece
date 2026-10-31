@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { runChecks, formatChecks, failed, installedPlugins, type DoctorDeps } from '../../src/doctor/main.js'
+import { systemOnPath, runChecks, formatChecks, failed, installedPlugins, type DoctorDeps } from '../../src/doctor/main.js'
 import { runCli, tmpProject } from '../helpers.js'
 
 const good = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
@@ -72,5 +72,20 @@ describe('hece doctor', () => {
     const r = runCli(['doctor'], { root: tmpProject(), env: { PATH: dir, CLAUDE_CONFIG_DIR: dir } })
     expect(r.stdout.endsWith("Claude Code's own check: claude doctor\n")).toBe(true)
     expect(r.stdout).toContain('✗ tmux')
+  })
+})
+
+describe('systemOnPath', () => {
+  it('finds an executable on PATH without running it', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-path-'))
+    fs.writeFileSync(path.join(dir, 'fakebin-x'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+    fs.writeFileSync(path.join(dir, 'plain-x'), '', { mode: 0o644 })
+    const old = process.env.PATH
+    process.env.PATH = dir
+    try {
+      expect(systemOnPath('fakebin-x')).toBe(true)
+      expect(systemOnPath('plain-x')).toBe(false)
+      expect(systemOnPath('nope-x')).toBe(false)
+    } finally { process.env.PATH = old }
   })
 })

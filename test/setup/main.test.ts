@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import YAML from 'yaml'
-import { runWizard, runPrefsEdit, type SetupDeps } from '../../src/setup/main.js'
-import { SCREENS } from '../../src/setup/screens.js'
+import { runWizard, runPrefsEdit, guarded, type SetupDeps } from '../../src/setup/main.js'
+import { SCREENS, PREFS_NAMES } from '../../src/setup/screens.js'
 import { resolvePrefs } from '../../src/prefs/schema.js'
 import { stripAnsi } from '../../src/panels/color.js'
 import { runCli, tmpProject } from '../helpers.js'
@@ -156,6 +156,51 @@ describe('runPrefsEdit', () => {
     const t = setup([esc])
     expect(await runPrefsEdit(t.d)).toBe('cancelled')
     expect(stripAnsi(t.writes.join(''))).toContain('check-questions')
+  })
+})
+
+describe('review fixes', () => {
+  const HAND = 'delegate:\n  build: claude-sonnet-4-5\nreview:\n  reviewer_model: claude-opus-4-1\n'
+  it('wizard Enter-through keeps hand-edited model values', async () => {
+    const t = setup(enters(THROUGH), 'preset: involved\n' + HAND)
+    await runWizard(t.d, { firstRun: false })
+    const r = read(t.file)
+    expect(r.delegate.build).toBe('claude-sonnet-4-5')
+    expect(r.review.reviewer_model).toBe('claude-opus-4-1')
+  })
+  it('prefs models keeps hand-edited values', async () => {
+    const t = setup(enters(6), 'preset: involved\n' + HAND)
+    await runPrefsEdit(t.d, 'models')
+    const r = read(t.file)
+    expect(r.delegate.build).toBe('claude-sonnet-4-5')
+    expect(r.review.reviewer_model).toBe('claude-opus-4-1')
+  })
+  it('guarded prints one line and returns undefined on save failure', async () => {
+    const t = setup([])
+    const err: string[] = []
+    const spy = vi.spyOn(process.stderr, 'write').mockImplementation((s) => (err.push(String(s)), true))
+    const r = await guarded(t.file, async () => { throw Object.assign(new Error('x'), { code: 'EACCES' }) })
+    spy.mockRestore()
+    expect(r).toBeUndefined()
+    expect(err.join('')).toBe(`hece: couldn't save ${t.file}: EACCES; run hece setup later\n`)
+  })
+  it('runWizard first run on an unwritable path throws (caught by guarded)', async () => {
+    const t = setup([enter, esc])
+    fs.chmodSync(path.dirname(t.file), 0o500)
+    try { await expect(runWizard(t.d, { firstRun: true })).rejects.toThrow() } finally { fs.chmodSync(path.dirname(t.file), 0o700) }
+  })
+  it('main groups come first in PREFS_NAMES', () => {
+    expect(PREFS_NAMES.slice(0, 6)).toEqual(['agent', 'preset', 'skills', 'models', 'guards', 'layout'])
+  })
+  it('prefs on an unchanged value writes nothing', async () => {
+    const t = setup([enter], 'preset: learning\n')
+    expect(await runPrefsEdit(t.d, 'check-questions')).toBe('saved')
+    expect(fs.readFileSync(t.file, 'utf8')).toBe('preset: learning\n')
+  })
+  it('final message follows a screen clear', async () => {
+    const t = setup([enter, esc])
+    await runWizard(t.d, { firstRun: true })
+    expect(t.writes.at(-1)).toBe('\x1b[2J\x1b[H')
   })
 })
 
