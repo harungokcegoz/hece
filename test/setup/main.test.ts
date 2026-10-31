@@ -15,14 +15,15 @@ const k = (name: string): Key => ({ name, sequence: name })
 const esc: Key = { name: 'escape' }
 const ctrlC: Key = { name: 'c', ctrl: true }
 
-function setup(keys: Key[], content?: string) {
+// width: macOS temp paths are longer than 40 columns and would wrap mid-path
+function setup(keys: Key[], content?: string, width = 40) {
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hece-setup-')), 'preferences.yaml')
   if (content !== undefined) fs.writeFileSync(file, content)
   const writes: string[] = []
   const outs: string[] = []
   let closed = 0
   const d: SetupDeps = {
-    io: { keys: (async function* () { yield* keys })(), write: (s) => writes.push(s), width: () => 40, close: () => closed++ },
+    io: { keys: (async function* () { yield* keys })(), write: (s) => writes.push(s), width: () => width, close: () => closed++ },
     file,
     ctx: { onPath: () => true, plugins: new Set(['superpowers', 'ponytail', 'caveman']), fileErrors: [] },
     doctor: () => [{ ok: true, label: 'node' }],
@@ -82,7 +83,7 @@ describe('runWizard', () => {
     expect(t.closed()).toBe(1)
   })
   it('summary shows YAML, path and the comments note', async () => {
-    const t = setup(enters(THROUGH), '# mine\npreset: involved\n')
+    const t = setup(enters(THROUGH), '# mine\npreset: involved\n', 400)
     await runWizard(t.d, { firstRun: false })
     const all = stripAnsi(t.writes.join(''))
     expect(all).toContain('preset: involved')
@@ -90,7 +91,7 @@ describe('runWizard', () => {
     expect(all).toContain('Comments in this file will be lost')
   })
   it('a broken file is never written', async () => {
-    const t = setup([enter], 'preset: [oops\n')
+    const t = setup([enter], 'preset: [oops\n', 400)
     expect(await runWizard(t.d, { firstRun: true })).toBe('cancelled')
     expect(stripAnsi(t.writes.join('')).replace(/\s+/g, ' ')).toContain(`Fix or delete ${t.file}`)
     expect(fs.readFileSync(t.file, 'utf8')).toBe('preset: [oops\n')
