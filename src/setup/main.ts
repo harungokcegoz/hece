@@ -17,7 +17,7 @@ export interface SetupDeps { io: Io; file: string; ctx: SetupContext; doctor(p?:
 const SAVED = 'Defaults saved. Change them any time with `hece prefs`.'
 
 type Stop = 'cancelled' | 'aborted'
-const stop = (k: 'quit' | 'abort'): Stop => (k === 'abort' ? 'aborted' : 'cancelled')
+const stop = (k: 'quit' | 'abort' | 'back'): Stop => (k === 'abort' ? 'aborted' : 'cancelled')
 
 /** Show screens in order with `b` history. Returns the answers, or why it stopped. */
 async function walk(d: SetupDeps, screens: readonly Screen[], p: Prefs, useWhen: boolean): Promise<{ p: Prefs; touched: string[] } | Stop> {
@@ -30,8 +30,8 @@ async function walk(d: SetupDeps, screens: readonly Screen[], p: Prefs, useWhen:
     const opts = s.options(p, d.ctx)
     const cur = s.key ? (s.key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)[k], p)) : undefined
     const r = await ask(d.io, s.title, s.lines(p, d.ctx), opts, Math.max(0, opts.findIndex((o) => o.value === cur)))
-    if (r.kind === 'quit' || r.kind === 'abort') return stop(r.kind)
     if (r.kind === 'back') { if (stack.length) i = stack.pop()!; continue }
+    if (r.kind !== 'pick') return stop(r.kind)
     stack.push(i)
     if (s.key) {
       p = setKey(p, s.key, r.value)
