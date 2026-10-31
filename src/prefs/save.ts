@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import path from 'node:path'
 import YAML from 'yaml'
 import { parseBool, presetDefaults, resolvePrefs, validatePrefs } from './schema.js'
 import type { Prefs } from './schema.js'
@@ -38,18 +39,15 @@ export function flatten(p: Prefs): Record<string, string | boolean> {
 }
 
 export function readGlobal(file: string): GlobalFile {
-  const { raw, error } = readYaml(file)
+  const { raw, text, error } = readYaml(file)
   const g: GlobalFile = { path: file, raw: {}, hadComments: false, errors: [] }
   if (error) return { ...g, error }
   if (raw !== undefined && raw !== null) {
     if (!isObj(raw)) return { ...g, error: `${file}: preferences must be a mapping of keys to values` }
     g.raw = raw
   }
-  try {
-    g.hadComments = /^\s*#|\s#/m.test(fs.readFileSync(file, 'utf8'))
-  } catch {
-    // missing file: nothing to keep
-  }
+  // shortcut: a quote opened but never closed on a line is not stripped; fine for the "will be lost" hint
+  g.hadComments = (text ?? '').split('\n').some((l) => /^\s*#|\s#/.test(l.replace(/"(?:\\.|[^"\\])*"|'[^']*'/g, '')))
   g.errors = validatePrefs(g.raw, file).errors
   return g
 }
@@ -102,5 +100,12 @@ export function promoteToCustom(p: Prefs, touched: readonly string[]): { prefs: 
 export function saveGlobal(g: GlobalFile, raw: Obj): void {
   if (g.error) throw new Error(`not saving over ${g.path}: ${g.error}`)
   // write through a symlinked file (dotfiles/stow) instead of replacing the link
-  writeFileAtomic(fs.existsSync(g.path) ? fs.realpathSync(g.path) : g.path, YAML.stringify(raw))
+  let target = g.path
+  if (fs.existsSync(target)) target = fs.realpathSync(target)
+  else if (fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    target = path.resolve(path.dirname(target), fs.readlinkSync(target)) // dangling link
+  }
+  const mode = fs.statSync(target, { throwIfNoEntry: false })?.mode
+  writeFileAtomic(target, YAML.stringify(raw))
+  if (mode !== undefined) fs.chmodSync(target, mode & 0o777)
 }

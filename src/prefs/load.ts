@@ -13,7 +13,7 @@ export function prefsFiles(env: NodeJS.ProcessEnv, root: string, home: string = 
   }
 }
 
-export function readYaml(file: string): { raw: unknown; error?: string } {
+export function readYaml(file: string): { raw: unknown; text?: string; error?: string } {
   let text: string
   try {
     text = fs.readFileSync(file, 'utf8')
@@ -23,7 +23,7 @@ export function readYaml(file: string): { raw: unknown; error?: string } {
     return { raw: undefined, error: `${file}: could not read preferences (${code ?? 'unknown I/O error'})` }
   }
   try {
-    return { raw: YAML.parse(text) }
+    return { raw: YAML.parse(text), text }
   } catch (err) {
     return { raw: undefined, error: `${file}: invalid YAML (${(err as Error).message.split('\n')[0]})` }
   }

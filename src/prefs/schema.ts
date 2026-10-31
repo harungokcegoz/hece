@@ -118,7 +118,7 @@ export function validatePrefs(raw: unknown, source: string): { flat: Record<stri
       if (key === 'guards' && (v === null || typeof v !== 'object' || Array.isArray(v))) {
         const r = check(BOOL, v)
         if (r.ok) flat['guards.stops'] = flat['guards.files'] = r.value
-        else errors.push(`${source}: "${key}" is ${JSON.stringify(v)}; allowed: ${r.allowed}`)
+        else errors.push(`${source}: "${key}" is ${JSON.stringify(v)}; allowed: ${r.allowed}, or { stops, files }`)
         continue
       }
       const rule = Object.hasOwn(RULES, key) ? RULES[key] : undefined

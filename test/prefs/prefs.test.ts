@@ -83,7 +83,17 @@ describe('validation', () => {
   })
 })
 
+describe('legacy guards', () => {
+  it('a junk scalar error mentions the group form', () => {
+    expect(validatePrefs({ guards: 'maybe' }, 'f').errors[0]).toContain('{ stops, files }')
+  })
+})
+
 describe('loadPrefs', () => {
+  it('a file with only effort.build resolves the other efforts to their defaults', () => {
+    write(prefsFiles({}, root, home).global, 'effort: { build: high }\n')
+    expect(loadPrefs({}, root, home).prefs.effort).toEqual({ orchestrator: 'default', build: 'high', review: 'high' })
+  })
   it.each([['global', 'EACCES'], ['project', 'EISDIR']] as const)('reports unreadable %s preferences (%s) while using the other file', (layer, code) => {
     const files = prefsFiles({}, root, home)
     write(files.global, 'preset: learning\n')

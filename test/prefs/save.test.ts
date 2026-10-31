@@ -60,6 +60,20 @@ describe('global file', () => {
     expect(g.hadComments).toBe(true)
     expect(g.raw).toEqual({ preset: 'learning' })
   })
+  it('a scalar or an array is an error and saveGlobal refuses', () => {
+    for (const text of ['just text\n', '- a\n']) {
+      const f = tmp(text)
+      const g = readGlobal(f)
+      expect(g.error).toMatch(/must be a mapping/)
+      expect(() => saveGlobal(g, { preset: 'learning' })).toThrow()
+      expect(fs.readFileSync(f, 'utf8')).toBe(text)
+    }
+  })
+  it('a # inside a quoted value is not a comment, a trailing comment is', () => {
+    expect(readGlobal(tmp('reviewer_model: "x #1"\n')).hadComments).toBe(false)
+    expect(readGlobal(tmp("review:\n  reviewer_model: 'x #1'\n")).hadComments).toBe(false)
+    expect(readGlobal(tmp('reviewer_model: "x #1" # note\n')).hadComments).toBe(true)
+  })
   it('a missing file is empty, and save creates it', () => {
     const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hece-save-')), 'sub', 'p.yaml')
     const g = readGlobal(f)
@@ -70,7 +84,30 @@ describe('global file', () => {
   })
 })
 
+describe('promoteToCustom', () => {
+  it('is a no-op for custom, or when no custom-only key was touched', () => {
+    const c = { ...presetDefaults('involved'), preset: 'custom' as const }
+    expect(promoteToCustom(c, ['check_questions'])).toEqual({ prefs: c, touched: ['check_questions'] })
+    const i = presetDefaults('involved')
+    expect(promoteToCustom(i, ['optimize'])).toEqual({ prefs: i, touched: ['optimize'] })
+  })
+})
+
 describe('saveGlobal symlink', () => {
+  it.skipIf(process.getuid?.() === 0)('keeps the file mode', () => {
+    const f = tmp('preset: involved\n')
+    fs.chmodSync(f, 0o600)
+    saveGlobal(readGlobal(f), { preset: 'learning' })
+    expect(fs.statSync(f).mode & 0o777).toBe(0o600)
+  })
+  it('writes to the target of a dangling symlink and keeps the link', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-link-'))
+    const link = path.join(dir, 'preferences.yaml')
+    fs.symlinkSync('real/p.yaml', link)
+    saveGlobal(readGlobal(link), { preset: 'learning' })
+    expect(fs.lstatSync(link).isSymbolicLink()).toBe(true)
+    expect(fs.readFileSync(path.join(dir, 'real', 'p.yaml'), 'utf8')).toContain('learning')
+  })
   it('writes through a symlink and keeps it', () => {
     const target = tmp('preset: involved\n')
     const link = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hece-link-')), 'preferences.yaml')
