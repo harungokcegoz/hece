@@ -68,9 +68,13 @@ describe('split guards', () => {
     expect(decideTool(discuss, filesOnly, edit('/proj/.hece/preferences.yaml'), protect).allow).toBe(false)
     expect(decideTool(discuss, filesOnly, edit('/proj/src/a.ts'), protect)).toEqual({ allow: true })
   })
-  it('stops guard alone blocks code edits in discuss but allows .hece edits', () => {
+  it('stops guard alone blocks code edits in discuss', () => {
     expect(decideTool(discuss, stopsOnly, edit('/proj/src/a.ts'), protect).allow).toBe(false)
-    expect(decideTool(emptyFlow(), stopsOnly, edit('/proj/.hece/preferences.yaml'), protect)).toEqual({ allow: true })
+  })
+  it('files: false skips the hece-path check (a slice in progress allows the edit, files: true denies it)', () => {
+    const f = edit('/proj/.hece/preferences.yaml')
+    expect(decideTool(working, stopsOnly, f, protect)).toEqual({ allow: true })
+    expect(decideTool(working, on, f, protect).allow).toBe(false)
   })
 })
 

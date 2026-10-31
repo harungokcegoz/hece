@@ -52,7 +52,8 @@ describe('claudeArgs prefs', () => {
     fs.mkdirSync(path.join(root, '.config-test', 'hece'), { recursive: true })
     fs.writeFileSync(path.join(root, '.config-test', 'hece', 'preferences.yaml'), 'delegate:\n  orchestrator: sonnet\n')
     const r = runCli(['--no-frame'], { root, env: { HECE_CLAUDE_BIN: fake } })
-    expect(JSON.parse(r.stdout.trim().split('\n').pop()!)).toContain('sonnet')
+    const args: string[] = JSON.parse(r.stdout.trim().split('\n').pop()!)
+    expect(args[args.indexOf('--model') + 1]).toBe('sonnet')
   })
 })
 
