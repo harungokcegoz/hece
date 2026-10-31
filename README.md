@@ -93,6 +93,14 @@ hece
 
 It accepts the same arguments as `claude`, for example `hece -c` to continue your last session.
 
+The first time you run `hece` in a terminal, a short setup asks how involved you want to be. Esc skips it and uses the defaults. You can come back any time:
+
+```bash
+hece setup         # choose your preferences again
+hece prefs [name]  # change one group, e.g. hece prefs guards
+hece doctor        # check the install
+```
+
 Ask Claude to build something with hece, for example *"Let's build a CLI that prints a greeting, using hece."* To see where you are, run this from your project root:
 
 ```bash
@@ -137,7 +145,7 @@ Without hece's hooks, the rules are kept by the agent itself (soft guards) and n
 
 ## Preferences
 
-`~/.config/hece/preferences.yaml` holds your global defaults. `.hece/preferences.yaml` in a project overrides them and can be committed to share a setup with your team.
+`~/.config/hece/preferences.yaml` holds your global defaults; `hece setup` and `hece prefs` write it for you. `.hece/preferences.yaml` in a project overrides them and can be committed to share a setup with your team.
 
 ```yaml
 preset: involved            # involved | learning | custom
@@ -145,10 +153,13 @@ slice_stop: { depth: short } # line | short | detailed
 check_questions: off        # off | non-routine | every
 flow_recap: false
 review: { final: on, reviewer_model: opus, show_minor: false }
-delegate: { orchestrator: opus, build: sonnet, review: opus }
-guards: on
+delegate: { orchestrator: default, build: sonnet, review: opus }
+guards: { stops: on, files: on } # old `guards: on|off` still works
+effort: { orchestrator: default, build: medium, review: high }
 optimize: ponytail          # ponytail | caveman
 ```
+
+`delegate.orchestrator: default` leaves the model Claude Code is already using. `effort` sets how hard each role thinks.
 
 A typo like `gaurds: off` is reported by name, and the safe default (guards on) stays.
 

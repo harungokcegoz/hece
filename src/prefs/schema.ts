@@ -1,3 +1,5 @@
+import { VENDORS } from './vendors.js'
+
 export type Widget = 'flow' | 'activity' | 'sessions' | 'none'
 
 export interface Prefs {
@@ -12,7 +14,8 @@ export interface Prefs {
   flow_recap: boolean
   layout: { left: Widget; right: Widget }
   delegate: { orchestrator: string; build: string; review: string }
-  guards: boolean
+  effort: { orchestrator: string; build: string; review: string }
+  guards: { stops: boolean; files: boolean }
   optimize: 'ponytail' | 'caveman'
 }
 
@@ -27,8 +30,9 @@ const INVOLVED: Prefs = {
   review: { final: true, reviewer_model: 'opus', show_minor: false },
   flow_recap: false,
   layout: { left: 'activity', right: 'flow' },
-  delegate: { orchestrator: 'opus', build: 'sonnet', review: 'opus' },
-  guards: true,
+  delegate: { orchestrator: 'default', build: 'sonnet', review: 'opus' },
+  effort: { orchestrator: 'default', build: 'medium', review: 'high' },
+  guards: { stops: true, files: true },
   optimize: 'ponytail',
 }
 
@@ -67,7 +71,12 @@ const RULES: Record<string, Rule> = {
   'delegate.orchestrator': STR,
   'delegate.build': STR,
   'delegate.review': STR,
-  guards: BOOL,
+  // shortcut: effort is checked against Claude's levels only; validate against VENDORS[agent] once another adapter is supported
+  'effort.orchestrator': e('default', ...VENDORS.claude.efforts),
+  'effort.build': e(...VENDORS.claude.efforts),
+  'effort.review': e(...VENDORS.claude.efforts),
+  'guards.stops': BOOL,
+  'guards.files': BOOL,
   optimize: e('ponytail', 'caveman'),
 }
 
@@ -89,6 +98,12 @@ function check(rule: Rule, v: unknown): Check {
   return typeof v === 'string' && v.trim() !== '' ? { ok: true, value: v } : { ok: false, allowed: 'a non-empty string' }
 }
 
+/** The boolean a legacy scalar like `guards: off` means, or undefined if the loader would reject it. */
+export function parseBool(v: unknown): boolean | undefined {
+  const r = check(BOOL, v)
+  return r.ok ? (r.value as boolean) : undefined
+}
+
 export function validatePrefs(raw: unknown, source: string): { flat: Record<string, string | boolean>; errors: string[] } {
   const flat: Record<string, string | boolean> = {}
   const errors: string[] = []
@@ -99,6 +114,13 @@ export function validatePrefs(raw: unknown, source: string): { flat: Record<stri
   const walk = (obj: Record<string, unknown>, prefix: string) => {
     for (const [k, v] of Object.entries(obj)) {
       const key = prefix ? `${prefix}.${k}` : k
+      // legacy `guards: on|off` switches both guards
+      if (key === 'guards' && (v === null || typeof v !== 'object' || Array.isArray(v))) {
+        const r = check(BOOL, v)
+        if (r.ok) flat['guards.stops'] = flat['guards.files'] = r.value
+        else errors.push(`${source}: "${key}" is ${JSON.stringify(v)}; allowed: ${r.allowed}, or { stops, files }`)
+        continue
+      }
       const rule = Object.hasOwn(RULES, key) ? RULES[key] : undefined
       if (!rule) {
         const isGroup = Object.keys(RULES).some((r) => r.startsWith(key + '.'))

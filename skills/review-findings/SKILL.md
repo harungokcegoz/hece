@@ -5,7 +5,7 @@ description: Use in the hece review phase to run the final code review and walk 
 
 # Review findings
 
-1. Dispatch a fresh reviewer with superpowers:requesting-code-review on `review.reviewer_model`, scoped to the whole feature (every slice). Give it the plan and the diff only, not the build conversation.
+1. Dispatch a fresh reviewer with superpowers:requesting-code-review on `review.reviewer_model` with effort `effort.review`, scoped to the whole feature (every slice). Give it the plan and the diff only, not the build conversation.
 2. Order findings with important first. Drop minor ones if `review.show_minor` is off.
 3. `flow_report_review(important, minor)`.
 4. One summary line: `Review: <i> important, <m> minor.`

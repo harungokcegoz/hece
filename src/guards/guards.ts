@@ -55,10 +55,11 @@ export function decideTool(
   tool: { name: string; input?: Record<string, unknown> },
   protect: ProtectedDirs,
 ): GuardDecision {
-  if (!prefs.guards || !EDIT_TOOLS.has(tool.name)) return { allow: true }
-  if (touchesHeceFiles(tool.input, protect)) {
+  if (!EDIT_TOOLS.has(tool.name)) return { allow: true }
+  if (prefs.guards.files && touchesHeceFiles(tool.input, protect)) {
     return deny('hece: preferences and flow state are changed by the user, not the agent')
   }
+  if (!prefs.guards.stops) return { allow: true }
   if (flow.phase === 'idle') return { allow: true }
   if (flow.phase === 'discuss') return deny('hece: no code edits during discussion; agree on a plan first')
   // done is not a free pass: a stopped slice or an unapproved new plan still blocks edits

@@ -88,16 +88,16 @@ describe('display width', () => {
 describe('flowPanelLines', () => {
   const OUTLINE = ['hece · not started', '▸ Discussion', '  Plan', '  Build (in slices)', '  Review', '  Recap', '  Done', '', 'Starts when you ask Claude to build.']
   it('shows the framework outline with Discussion next when there is no flow yet', () => {
-    expect(flowPanelLines(null, { guards: true, idle: null })).toEqual(OUTLINE)
-    expect(flowPanelLines(null, { guards: true, idle: null, home: true })).toEqual([...OUTLINE, '', "Tip: you're in your home folder."])
+    expect(flowPanelLines(null, { guards: { stops: true, files: true }, idle: null })).toEqual(OUTLINE)
+    expect(flowPanelLines(null, { guards: { stops: true, files: true }, idle: null, home: true })).toEqual([...OUTLINE, '', "Tip: you're in your home folder."])
   })
   it('uses the live view phase names and markers', () => {
-    const live = flowPanelLines({ ...emptyFlow(), phase: 'discuss' }, { guards: true, idle: null })
+    const live = flowPanelLines({ ...emptyFlow(), phase: 'discuss' }, { guards: { stops: true, files: true }, idle: null })
     for (const row of ['▸ Discussion', '  Plan', '  Review', '  Recap']) expect(live.some((l) => l.startsWith(row))).toBe(true)
-    expect(flowPanelLines(null, { guards: true, idle: null }).slice(1, 3)).toEqual(['▸ Discussion', '  Plan'])
+    expect(flowPanelLines(null, { guards: { stops: true, files: true }, idle: null }).slice(1, 3)).toEqual(['▸ Discussion', '  Plan'])
   })
   it('colours the empty outline like the live view and fits narrow panes', () => {
-    const lines = flowPanelLines(null, { guards: true, idle: null })
+    const lines = flowPanelLines(null, { guards: { stops: true, files: true }, idle: null })
     for (const w of [40, 20, 12, 6]) {
       const out = paintFlowLines(lines, w, 100)
       expect(out).toHaveLength(lines.length)
@@ -110,7 +110,7 @@ describe('flowPanelLines', () => {
     expect(stripAnsi(paintFlowLines(lines, 40, 100)[8])).toBe('Starts when you ask Claude to build.')
   })
   it('keeps the next step and the hint in a short pane', () => {
-    const lines = flowPanelLines(null, { guards: true, idle: null })
+    const lines = flowPanelLines(null, { guards: { stops: true, files: true }, idle: null })
     expect(fitFlowLines(lines, 40, 2)).toEqual(['▸ Discussion', 'Starts when you ask Claude to build.'])
     expect(fitFlowLines(lines, 40, 1)).toEqual(['▸ Discussion'])
     expect(fitFlowLines(lines, 40, 3)).toEqual(['hece · not started', '▸ Discussion', 'Starts when you ask Claude to build.'])
@@ -118,7 +118,7 @@ describe('flowPanelLines', () => {
   it('shows the flow, whether Claude is waiting, and the guards', () => {
     let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
     s = finishSlice(startSlice(approve(s, 2).state, 1, { guards: true }, 3), 1, { summary: 's', connectsTo: 'c' }, 4)
-    const lines = flowPanelLines(s, { guards: true, idle: true })
+    const lines = flowPanelLines(s, { guards: { stops: true, files: true }, idle: true })
     expect(lines).toContain('  ■ 1. A  ← waiting for you')
     expect(lines.slice(-2)).toEqual(['Claude: waiting for you', 'guards: on'])
   })
@@ -144,7 +144,7 @@ describe('flowPanelLines', () => {
     const slices = Array.from({ length: 8 }, (_, i) => ({ title: String.fromCharCode(65 + i), files: [], kind: 'routine' as const }))
     let s = setPlan(emptyFlow(), slices, { guards: true }, 1)
     s = finishSlice(startSlice(approve(s, 2).state, 1, { guards: true }, 3), 1, { summary: 's', connectsTo: 'c' }, 4)
-    const lines = flowPanelLines(s, { guards: true, idle: true })
+    const lines = flowPanelLines(s, { guards: { stops: true, files: true }, idle: true })
     const out = fitFlowLines(lines, 40, 6)
     expect(out.length).toBeLessThanOrEqual(6)
     expect(out).toContain('  ■ 1. A  ← waiting for you')
@@ -230,12 +230,12 @@ describe('Flow on narrow panes', () => {
   const waitingFlow = () => {
     let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
     s = finishSlice(startSlice(approve(s, 2).state, 1, { guards: true }, 3), 1, { summary: 's', connectsTo: 'c' }, 4)
-    return flowPanelLines(s, { guards: true, idle: true })
+    return flowPanelLines(s, { guards: { stops: true, files: true }, idle: true })
   }
   const workingFlow = () => {
     let s = setPlan(emptyFlow(), [{ title: 'Token model', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: true }, 1)
     s = startSlice(approve(s, 2).state, 1, { guards: true }, 3)
-    return flowPanelLines(s, { guards: true, idle: false })
+    return flowPanelLines(s, { guards: { stops: true, files: true }, idle: false })
   }
 
   for (let w = 8; w <= 14; w++) {
@@ -259,7 +259,7 @@ describe('Flow on narrow panes', () => {
 
   it('paints a cut plan-waiting line red', () => {
     let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }], { guards: true }, 1)
-    const out = paintFlowLines(flowPanelLines(s, { guards: true, idle: null }), 10, 100)
+    const out = paintFlowLines(flowPanelLines(s, { guards: { stops: true, files: true }, idle: null }), 10, 100)
     const plan = out.find((l) => stripAnsi(l).startsWith('▸ Plan'))
     expect(plan).toBeDefined()
     expect(plan!.startsWith(RED)).toBe(true)

@@ -4,8 +4,11 @@ import { setPhase, addDecision, setPlan, startSlice, finishSlice, approve, choos
 import { renderFlow } from '../../src/flow/render.js'
 
 describe('renderFlow', () => {
+  it('shows partial when one guard is off', () => {
+    expect(renderFlow(emptyFlow(), { guards: { stops: true, files: false } })).toContain('guards: partial')
+  })
   it('renders an idle flow', () => {
-    expect(renderFlow(emptyFlow(), { guards: true })).toBe(
+    expect(renderFlow(emptyFlow(), { guards: { stops: true, files: true } })).toBe(
       [
         'hece · idle',
         '  Discussion (0 decisions)',
@@ -31,7 +34,7 @@ describe('renderFlow', () => {
     s = approve(s, 7).state
     s = startSlice(s, 2, { guards: true }, 8)
     s = finishSlice(s, 2, { summary: 'a', connectsTo: 'b' }, 9)
-    expect(renderFlow(s, { guards: false })).toBe(
+    expect(renderFlow(s, { guards: { stops: false, files: false } })).toBe(
       [
         'hece · build',
         '✓ Discussion (1 decision)',
@@ -50,12 +53,12 @@ describe('renderFlow', () => {
   it('flags a changed plan waiting for approval', () => {
     let s = setPlan(emptyFlow(), [{ title: 'A', files: [], kind: 'routine' }], { guards: false }, 1)
     s = setPlan(s, [{ title: 'A', files: [], kind: 'routine' }, { title: 'B', files: [], kind: 'routine' }], { guards: false }, 2)
-    expect(renderFlow(s, { guards: true })).toContain('▸ Plan (2 slices) — changed, waiting for approval')
+    expect(renderFlow(s, { guards: { stops: true, files: true } })).toContain('▸ Plan (2 slices) — changed, waiting for approval')
   })
 
   it('shows review counts and marks everything done at the end', () => {
     const s = { ...setPhase(emptyFlow(), 'done', { guards: false }, 1), review: { important: 2, minor: 3, at: 1 } }
-    const out = renderFlow(s, { guards: true })
+    const out = renderFlow(s, { guards: { stops: true, files: true } })
     expect(out).toContain('✓ Review (2 important, 3 minor)')
     expect(out).toContain('✓ Recap')
   })
@@ -65,7 +68,7 @@ describe('renderFlow', () => {
     let s = approve(setPlan(emptyFlow(), plan, { guards: false }, 1), 2).state
     s = chooseMode(s, 'parallel', 3)!
     s = finishSlice(startSlice(startSlice(s, 1, { guards: true }, 4), 2, { guards: true }, 5), 1, { summary: 'a', connectsTo: 'b' }, 6)
-    expect(renderFlow(s, { guards: true })).toContain('■ 1. A  ← done')
-    expect(renderFlow(s, { guards: true })).not.toContain('waiting for you')
+    expect(renderFlow(s, { guards: { stops: true, files: true } })).toContain('■ 1. A  ← done')
+    expect(renderFlow(s, { guards: { stops: true, files: true } })).not.toContain('waiting for you')
   })
 })

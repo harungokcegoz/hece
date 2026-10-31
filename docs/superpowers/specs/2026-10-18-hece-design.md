@@ -142,6 +142,8 @@ Why retry once: a second failure means the refresh token is dead → logout.
 
 ## 8. Onboarding and preferences
 
+Amended by `2026-10-28-onboarding-design.md`.
+
 ### 8.1 Onboarding (`hece setup`, runs automatically on first `hece`)
 Plain Ink wizard, **one thing per screen**, arrow keys:
 

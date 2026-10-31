@@ -96,7 +96,7 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
       description: 'Move the hece flow to a phase. Calling it with "discuss" starts a fresh flow (earlier decisions and plan are cleared) and creates .hece/state in the project.',
       inputSchema: { phase: z.enum(['discuss', 'plan', 'build', 'review', 'recap', 'done']) },
     },
-    async ({ phase }) => mutate('flow_set_phase', (s) => flow.setPhase(s, phase, { guards: prefs().prefs.guards }, now()), { phase }),
+    async ({ phase }) => mutate('flow_set_phase', (s) => flow.setPhase(s, phase, { guards: prefs().prefs.guards.stops }, now()), { phase }),
   )
 
   server.registerTool(
@@ -126,13 +126,13 @@ export function createServer(opts: { root: string; env: NodeJS.ProcessEnv; now?:
           .min(1),
       },
     },
-    async ({ slices }) => mutate('flow_set_plan', (s) => flow.setPlan(s, slices, { guards: prefs().prefs.guards }, now()), { slices: slices.length }),
+    async ({ slices }) => mutate('flow_set_plan', (s) => flow.setPlan(s, slices, { guards: prefs().prefs.guards.stops }, now()), { slices: slices.length }),
   )
 
   server.registerTool(
     'flow_start_slice',
     { description: 'Start working on slice n (1-based).', inputSchema: { n: z.number().int().min(1) } },
-    async ({ n }) => mutate('flow_start_slice', (s) => flow.startSlice(s, n, { guards: prefs().prefs.guards }, now()), { n }),
+    async ({ n }) => mutate('flow_start_slice', (s) => flow.startSlice(s, n, { guards: prefs().prefs.guards.stops }, now()), { n }),
   )
 
   server.registerTool(

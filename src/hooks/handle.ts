@@ -100,7 +100,7 @@ export function handleHook(p: HookPayload, ctx: HookContext): { stdout: string }
   } catch (err) {
     // an unreadable flow must not silently switch the guards off
     ev('hook_error', { message: (err as Error).message })
-    if (p.hook_event_name === 'PreToolUse' && EDIT_TOOLS.has(p.tool_name ?? '') && ctx.prefs.guards) {
+    if (p.hook_event_name === 'PreToolUse' && EDIT_TOOLS.has(p.tool_name ?? '') && (ctx.prefs.guards.stops || ctx.prefs.guards.files)) {
       return deny('hece: .hece/state/flow.json is unreadable; run hece status')
     }
     return none
