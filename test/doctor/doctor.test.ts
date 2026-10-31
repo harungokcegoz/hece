@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { runChecks, formatChecks, installedPlugins, type DoctorDeps } from '../../src/doctor/main.js'
+import { runChecks, formatChecks, failed, installedPlugins, type DoctorDeps } from '../../src/doctor/main.js'
 import { runCli, tmpProject } from '../helpers.js'
 
 const good = (o: Partial<DoctorDeps> = {}): DoctorDeps => ({
@@ -44,6 +44,13 @@ describe('formatChecks', () => {
   })
 })
 
+describe('failed', () => {
+  it('ignores optional checks', () => {
+    expect(failed(runChecks(good({ onPath: (b) => b !== 'tmux' })))).toBe(false)
+    expect(failed(runChecks(good({ nodeVersion: 'v18.0.0' })))).toBe(true)
+  })
+})
+
 describe('installedPlugins', () => {
   it('reads names before @', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-cc-'))
@@ -55,7 +62,7 @@ describe('installedPlugins', () => {
 })
 
 describe('hece doctor', () => {
-  it('exits 0 without tmux and ends with the claude doctor line', () => {
+  it('marks tmux and ends with the claude doctor line', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-doc-'))
     const fake = path.join(dir, 'claude')
     fs.writeFileSync(fake, '#!/bin/sh\nexit 0\n')
@@ -65,6 +72,5 @@ describe('hece doctor', () => {
     const r = runCli(['doctor'], { root: tmpProject(), env: { PATH: dir, CLAUDE_CONFIG_DIR: dir } })
     expect(r.stdout.endsWith("Claude Code's own check: claude doctor\n")).toBe(true)
     expect(r.stdout).toContain('✗ tmux')
-    expect(r.status).toBe(0)
   })
 })

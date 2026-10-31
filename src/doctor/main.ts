@@ -52,6 +52,8 @@ export function formatChecks(c: Check[]): string {
   return [...lines, "Claude Code's own check: claude doctor"].join('\n') + '\n'
 }
 
+export const failed = (c: Check[]): boolean => c.some((x) => !x.ok && !x.optional)
+
 export function installedPlugins(env: NodeJS.ProcessEnv, home: string = os.homedir()): Set<string> | null {
   try {
     const file = path.join(env.CLAUDE_CONFIG_DIR || path.join(home, '.claude'), 'plugins', 'installed_plugins.json')
@@ -74,5 +76,5 @@ export async function runDoctor(): Promise<void> {
     optimize: prefs.optimize,
   })
   process.stdout.write(formatChecks(checks))
-  if (checks.some((c) => !c.ok && !c.optional)) process.exitCode = 1
+  if (failed(checks)) process.exitCode = 1
 }
