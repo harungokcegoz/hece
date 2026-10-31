@@ -73,8 +73,8 @@ describe('ask results', () => {
     expect(await ask(fakeIo([{ name: 'escape' }]), 'T', [], opts, 0)).toEqual({ kind: 'quit' })
     expect(await ask(fakeIo([{ name: 'c', ctrl: true }]), 'T', [], opts, 0)).toEqual({ kind: 'abort' })
   })
-  it('quits when the key stream ends', async () => {
-    expect(await ask(fakeIo([]), 'T', [], opts, 0)).toEqual({ kind: 'quit' })
+  it('aborts when the key stream ends', async () => {
+    expect(await ask(fakeIo([]), 'T', [], opts, 0)).toEqual({ kind: 'abort' })
   })
   it('starts on the first enabled option when initial is disabled', async () => {
     expect(await ask(fakeIo([{ name: 'return' }]), 'T', [], opts, 1)).toEqual({ kind: 'pick', value: 'a' })

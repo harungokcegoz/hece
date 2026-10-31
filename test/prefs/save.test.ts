@@ -73,6 +73,7 @@ describe('global file', () => {
     expect(readGlobal(tmp('reviewer_model: "x #1"\n')).hadComments).toBe(false)
     expect(readGlobal(tmp("review:\n  reviewer_model: 'x #1'\n")).hadComments).toBe(false)
     expect(readGlobal(tmp('reviewer_model: "x #1" # note\n')).hadComments).toBe(true)
+    expect(readGlobal(tmp("a: it's # note 'x'\n")).hadComments).toBe(true)
   })
   it('a missing file is empty, and save creates it', () => {
     const f = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'hece-save-')), 'sub', 'p.yaml')
@@ -94,11 +95,20 @@ describe('promoteToCustom', () => {
 })
 
 describe('saveGlobal symlink', () => {
-  it.skipIf(process.getuid?.() === 0)('keeps the file mode', () => {
+  it('keeps the file mode', () => {
     const f = tmp('preset: involved\n')
     fs.chmodSync(f, 0o600)
     saveGlobal(readGlobal(f), { preset: 'learning' })
     expect(fs.statSync(f).mode & 0o777).toBe(0o600)
+  })
+  it('follows a chain of links to a dangling target', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-link-'))
+    fs.symlinkSync('real/p.yaml', path.join(dir, 'b'))
+    fs.symlinkSync('b', path.join(dir, 'a'))
+    saveGlobal(readGlobal(path.join(dir, 'a')), { preset: 'learning' })
+    expect(fs.lstatSync(path.join(dir, 'a')).isSymbolicLink()).toBe(true)
+    expect(fs.lstatSync(path.join(dir, 'b')).isSymbolicLink()).toBe(true)
+    expect(fs.readFileSync(path.join(dir, 'real', 'p.yaml'), 'utf8')).toContain('learning')
   })
   it('writes to the target of a dangling symlink and keeps the link', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-link-'))

@@ -46,8 +46,7 @@ export function readGlobal(file: string): GlobalFile {
     if (!isObj(raw)) return { ...g, error: `${file}: preferences must be a mapping of keys to values` }
     g.raw = raw
   }
-  // shortcut: a quote opened but never closed on a line is not stripped; fine for the "will be lost" hint
-  g.hadComments = (text ?? '').split('\n').some((l) => /^\s*#|\s#/.test(l.replace(/"(?:\\.|[^"\\])*"|'[^']*'/g, '')))
+  g.hadComments = [...new YAML.Lexer().lex(text ?? '')].some((t) => t[0] === '#')
   g.errors = validatePrefs(g.raw, file).errors
   return g
 }
@@ -101,11 +100,10 @@ export function saveGlobal(g: GlobalFile, raw: Obj): void {
   if (g.error) throw new Error(`not saving over ${g.path}: ${g.error}`)
   // write through a symlinked file (dotfiles/stow) instead of replacing the link
   let target = g.path
-  if (fs.existsSync(target)) target = fs.realpathSync(target)
-  else if (fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) {
-    target = path.resolve(path.dirname(target), fs.readlinkSync(target)) // dangling link
+  // follow link chains by hand so a dangling link is written at its target
+  for (let hops = 0; hops < 40 && fs.lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink(); hops++) {
+    target = path.resolve(path.dirname(target), fs.readlinkSync(target))
   }
   const mode = fs.statSync(target, { throwIfNoEntry: false })?.mode
-  writeFileAtomic(target, YAML.stringify(raw))
-  if (mode !== undefined) fs.chmodSync(target, mode & 0o777)
+  writeFileAtomic(target, YAML.stringify(raw), mode === undefined ? undefined : mode & 0o777)
 }

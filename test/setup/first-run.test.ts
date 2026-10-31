@@ -28,7 +28,7 @@ describe('first run', () => {
     // without the gate the wizard would find no terminal, refuse and print an error
     expect(fs.existsSync(marker)).toBe(true)
     expect(r.status).toBe(0)
-    expect(r.stdout + r.stderr).not.toMatch(/needs a terminal|setup|Defaults saved/)
+    expect(r.stdout + r.stderr).not.toMatch(/needs a terminal|Defaults saved|keeps you in the loop/)
     expect(fs.existsSync(prefsFiles(testEnv(root), root).global)).toBe(false)
   })
 })

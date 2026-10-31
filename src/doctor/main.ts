@@ -34,11 +34,20 @@ function wiringProblem(d: DoctorDeps): string | undefined {
   for (const { file, part } of parts) {
     const name = path.basename(file)
     if (!d.exists(file)) return `reinstall hece (${name} missing)`
+    let text: string
     try {
-      if (!JSON.stringify(part(JSON.parse(d.read(file))) ?? null).includes('dist/cli.js')) return `reinstall hece (${name} does not run dist/cli.js)`
+      text = d.read(file)
+    } catch (err) {
+      return `can't read ${file}: ${(err as NodeJS.ErrnoException).code ?? 'unknown error'}; reinstall hece`
+    }
+    let json: unknown
+    try {
+      json = JSON.parse(text)
     } catch {
       return `reinstall hece (${name} is not valid JSON)`
     }
+    if (json === null || typeof json !== 'object' || Array.isArray(json)) return `reinstall hece (${name} isn't a JSON object)`
+    if (!JSON.stringify(part(json) ?? null).includes('dist/cli.js')) return `reinstall hece (${name} does not run dist/cli.js)`
   }
 }
 

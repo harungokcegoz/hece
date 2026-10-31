@@ -208,7 +208,7 @@ describe('review fixes', () => {
     expect(t.d.ctx).toBe(ctx)
     expect(ctx.fileErrors).toEqual([])
   })
-  it('runWizard first run on an unwritable path throws (caught by guarded)', async () => {
+  it.skipIf(process.getuid?.() === 0)('runWizard first run on an unwritable path throws (caught by guarded)', async () => {
     const t = setup([enter, esc])
     fs.chmodSync(path.dirname(t.file), 0o500)
     try { await expect(runWizard(t.d, { firstRun: true })).rejects.toThrow() } finally { fs.chmodSync(path.dirname(t.file), 0o700) }

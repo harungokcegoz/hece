@@ -24,11 +24,12 @@ export function readJson<T>(file: string, fallback: T): T {
   }
 }
 
-export function writeFileAtomic(file: string, text: string): void {
+export function writeFileAtomic(file: string, text: string, mode?: number): void {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`
   try {
     fs.writeFileSync(tmp, text)
+    if (mode !== undefined) fs.chmodSync(tmp, mode) // before the rename: never briefly wider than the old file
     fs.renameSync(tmp, file)
   } catch (err) {
     try {

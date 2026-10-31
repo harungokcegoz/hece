@@ -60,7 +60,7 @@ export async function ask(io: Io, title: string, lines: string[], options: Optio
   draw()
   for (;;) {
     const { value: key, done } = await io.keys.next()
-    if (done) return { kind: 'quit' }
+    if (done) return { kind: 'abort' } // dead terminal: don't save defaults and launch
     const step = onKey(cursor, options, key)
     if (step.kind === 'pick') return { kind: 'pick', value: options[step.index].value }
     if (step.kind === 'back' || step.kind === 'quit' || step.kind === 'abort') return { kind: step.kind }

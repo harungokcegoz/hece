@@ -55,6 +55,11 @@ describe('runChecks', () => {
     fs.writeFileSync(path.join(root, 'hooks', 'hooks.json'), HOOKS)
     expect(runChecks(good(real))[7].ok).toBe(true)
   })
+  it('says what is wrong with a wiring file', () => {
+    const w = (read: (f: string) => string) => runChecks(good({ read }))[7].fix
+    expect(w(() => { throw Object.assign(new Error('x'), { code: 'EACCES' }) })).toMatch(/can't read .*json: EACCES/)
+    expect(w(() => 'null')).toContain("isn't a JSON object")
+  })
   it('old node fails', () => {
     expect(runChecks(good({ nodeVersion: 'v18.20.0' }))[0].ok).toBe(false)
   })
@@ -125,7 +130,10 @@ describe('systemOnPath', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hece-path-'))
     const fake = path.join(dir, 'myclaude')
     fs.writeFileSync(fake, '#!/bin/sh\n', { mode: 0o755 })
-    const old = { ...process.env }
+    const keys = ['PATH', 'HECE_CLAUDE_BIN', 'HECE_TMUX_BIN']
+    const old = Object.fromEntries(keys.map((k) => [k, process.env[k]]))
+    delete process.env.HECE_CLAUDE_BIN
+    delete process.env.HECE_TMUX_BIN
     process.env.PATH = path.join(dir, 'empty')
     try {
       expect(systemOnPath('claude')).toBe(false)
@@ -135,6 +143,6 @@ describe('systemOnPath', () => {
       expect(systemOnPath('tmux')).toBe(true)
       process.env.HECE_TMUX_BIN = path.join(dir, 'nope')
       expect(systemOnPath('tmux')).toBe(false)
-    } finally { process.env = old }
+    } finally { for (const k of keys) { if (old[k] === undefined) delete process.env[k]; else process.env[k] = old[k] } }
   })
 })
