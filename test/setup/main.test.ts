@@ -53,6 +53,10 @@ describe('runWizard', () => {
     const t = setup([enter, enter, k('down'), enter, enter, k('b'), k('b'), enter, ...enters(THROUGH)])
     await runWizard(t.d, { firstRun: false })
     expect(read(t.file).preset).toBe('learning')
+    // the frame redrawn on going back has the cursor on the earlier answer
+    const frames = t.writes.map(stripAnsi).filter((w) => w.includes('How involved do you want to be?'))
+    expect(frames).toHaveLength(3)
+    expect(frames.at(-1)).toContain('› 2. learning')
   })
   it('b on the first screen stays put', async () => {
     const t = setup([k('b'), esc])
@@ -175,14 +179,34 @@ describe('review fixes', () => {
     expect(r.delegate.build).toBe('claude-sonnet-4-5')
     expect(r.review.reviewer_model).toBe('claude-opus-4-1')
   })
-  it('guarded prints one line and returns undefined on save failure', async () => {
-    const t = setup([])
+  const capture = async (fn: () => Promise<unknown>, t: ReturnType<typeof setup>) => {
     const err: string[] = []
     const spy = vi.spyOn(process.stderr, 'write').mockImplementation((s) => (err.push(String(s)), true))
-    const r = await guarded(t.file, async () => { throw Object.assign(new Error('x'), { code: 'EACCES' }) })
-    spy.mockRestore()
+    try { return { r: await guarded(t.d.io, fn), err: err.join('') } } finally { spy.mockRestore() }
+  }
+  it.skipIf(process.getuid?.() === 0)('guarded: a save failure prints one line after clearing the screen', async () => {
+    const t = setup([enter, esc])
+    fs.chmodSync(path.dirname(t.file), 0o500)
+    try {
+      const { r, err } = await capture(() => runWizard(t.d, { firstRun: true }), t)
+      expect(r).toBeUndefined()
+      expect(err).toBe(`hece: couldn't save ${t.file}: EACCES; run hece setup later\n`)
+      expect(t.writes.at(-1)).toBe('\x1b[2J\x1b[H')
+    } finally { fs.chmodSync(path.dirname(t.file), 0o700) }
+  })
+  it('guarded: other errors are not called save failures', async () => {
+    const t = setup([])
+    const { r, err } = await capture(async () => { throw new Error('boom') }, t)
     expect(r).toBeUndefined()
-    expect(err.join('')).toBe(`hece: couldn't save ${t.file}: EACCES; run hece setup later\n`)
+    expect(err).toBe('hece: setup failed: boom\n')
+    expect(t.writes.at(-1)).toBe('\x1b[2J\x1b[H')
+  })
+  it('runWizard does not change the caller\'s ctx', async () => {
+    const t = setup([enter, esc], 'mystery: 1\n')
+    const ctx = t.d.ctx
+    await runWizard(t.d, { firstRun: false })
+    expect(t.d.ctx).toBe(ctx)
+    expect(ctx.fileErrors).toEqual([])
   })
   it('runWizard first run on an unwritable path throws (caught by guarded)', async () => {
     const t = setup([enter, esc])
@@ -205,6 +229,11 @@ describe('review fixes', () => {
 })
 
 describe('cli', () => {
+  it('prefs without a terminal names the command', () => {
+    const r = runCli(['prefs'], { root: tmpProject() })
+    expect(r.status).toBe(1)
+    expect(r.stderr).toContain('hece prefs needs a terminal')
+  })
   it('setup without a terminal exits 1', () => {
     const r = runCli(['setup'], { root: tmpProject() })
     expect(r.status).toBe(1)

@@ -36,7 +36,7 @@ const SUPERPOWERS = '/plugin install superpowers@claude-plugins-official'
 
 function skillLines(p: Prefs, c: SetupContext): string[] {
   const out = ['ponytail: smallest change that works.', 'caveman: terse replies, fewer tokens.', '']
-  if (!c.plugins) return [...out, "I couldn't read Claude Code's plugin list.", 'hece needs superpowers. Install both:', SUPERPOWERS, ...PACKS[p.optimize]]
+  if (!c.plugins) return [...out, "Can't read Claude Code's plugin list.", 'hece needs superpowers. Install both:', SUPERPOWERS, ...PACKS[p.optimize]]
   const sp = c.plugins.has('superpowers')
   const pk = c.plugins.has(p.optimize)
   out.push(`superpowers ${sp ? '✓' : '✗'}  ${p.optimize} ${pk ? '✓' : '✗'}`)
@@ -116,23 +116,23 @@ export const SCREENS: readonly Screen[] = [
       return { label: n, value: n, note, preview: slicePreview(d.slice_stop.depth, d.check_questions !== 'off') }
     }),
   },
-  pick('discussion-first', 'discussion.first', 'Who speaks first?', ['In discussion, who opens?', 'e.g. "me": you state the goal.'],
+  pick('discussion-first', 'discussion.first', 'Who speaks first?', ['Who speaks first in a discussion?', 'me: it asks for your idea first.', 'agent: it offers its idea first.'],
     [opt('me', 'me'), opt('agent', 'agent', 'it proposes first')]),
-  pick('pushback', 'discussion.pushback', 'Pushback', ['How hard should it push back?', 'e.g. "direct": "That will break X."'],
+  pick('pushback', 'discussion.pushback', 'Pushback', ['How does it react to a weak idea?', 'gentle: suggests an alternative.', 'direct: says why it is a bad idea.'],
     [opt('gentle', 'gentle'), opt('direct', 'direct')]),
-  pick('slice-size', 'plan.slice_size', 'Slice size', ['How big is each build step?', 'e.g. "small": one function.'],
+  pick('slice-size', 'plan.slice_size', 'Slice size', ['How big is each build step?', 'small: 1-3 files per slice.', 'medium: 3-6 files per slice.'],
     [opt('small', 'small'), opt('medium', 'medium')]),
-  pick('stop-depth', 'slice_stop.depth', 'Stop depth', ['How much to say at each stop?', 'e.g. "short": done + next.'],
+  pick('stop-depth', 'slice_stop.depth', 'Stop depth', ['How much to say at each stop?', 'line: one line.', 'short: up to 5 lines, done + next.', 'detailed: up to 15 lines, files + why.'],
     [opt('line', 'line', 'one line'), opt('short', 'short'), opt('detailed', 'detailed', 'files and why')]),
-  pick('check-questions', 'check_questions', 'Check questions', ['Quiz you on what was built?', 'e.g. "Why a controlled input?"'],
+  pick('check-questions', 'check_questions', 'Check questions', ['Quiz you on what was built?', 'off: never.', 'non-routine: only teaching slices.', 'every: after every slice.'],
     [opt('off', 'off'), opt('non-routine', 'non-routine', 'only unusual code'), opt('every', 'every', 'every slice')]),
-  pick('side-chats', 'side_chats.open_in', 'Side chats', ['Where do side chats open?', 'e.g. "pane": beside the build.'],
+  pick('side-chats', 'side_chats.open_in', 'Side chats', ['Where do side chats open?', 'pane: beside the build.', 'window: in a separate window.'],
     [opt('pane', 'pane'), opt('window', 'window')]),
-  pick('review-final', 'review.final', 'Final review', ['Review the whole build at the end?', 'e.g. "on": a reviewer reads the diff.'],
+  pick('review-final', 'review.final', 'Final review', ['Review the whole build at the end?', 'on: a reviewer reads the full diff.', 'off: skip the final review.'],
     [opt(true, 'on'), opt(false, 'off')]),
-  pick('review-minor', 'review.show_minor', 'Minor findings', ['Show small review findings?', 'e.g. "on": naming nits appear.'],
+  pick('review-minor', 'review.show_minor', 'Minor findings', ['Show small review findings?', 'on: naming and style nits appear.', 'off: only the important ones.'],
     [opt(true, 'on'), opt(false, 'off')]),
-  pick('recap', 'flow_recap', 'Recap', ['Recap the flow when done?', 'e.g. "on": a short summary.'],
+  pick('recap', 'flow_recap', 'Recap', ['Recap the flow when done?', 'on: a walkthrough, up to 15 lines.', 'off: finish without a recap.'],
     [opt(true, 'on'), opt(false, 'off')]),
   {
     id: 'optimize', group: 'skills', key: 'optimize', title: 'Skills',

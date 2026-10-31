@@ -33,7 +33,7 @@ describe('screens', () => {
   it('optimize screen', () => {
     const s = S('optimize')
     expect(s.lines(p, ctx).join('\n')).toContain('/plugin install superpowers@claude-plugins-official')
-    expect(s.lines(p, { ...ctx, plugins: null }).join('\n')).toContain("couldn't read Claude Code's plugin list")
+    expect(s.lines(p, { ...ctx, plugins: null }).join('\n')).toContain("Can't read Claude Code's plugin list")
   })
   it('model and effort screens', () => {
     const v = VENDORS.claude
@@ -57,5 +57,22 @@ describe('screens', () => {
           const pr = { ...presetDefaults(preset), agent }
           for (const o of s.options(pr, ctx)) expect(displayWidth(o.label), `${s.id}: ${o.label}`).toBeLessThanOrEqual(30)
         }
+  })
+  it('body lines fit 40 columns, except install commands, which sit alone and unindented', () => {
+    for (const agent of Object.keys(VENDORS) as (keyof typeof VENDORS)[])
+      for (const preset of ['involved', 'learning', 'custom'] as const)
+        for (const optimize of ['ponytail', 'caveman'] as const)
+          for (const plugins of [null, new Set<string>(), new Set(['superpowers', 'ponytail', 'caveman'])])
+            for (const s of SCREENS)
+              for (const l of s.lines({ ...presetDefaults(preset), agent, optimize }, { ...ctx, plugins })) {
+                if (l.startsWith('/plugin')) expect(l, l).toBe(l.trim())
+                else expect(displayWidth(l), `${s.id}: ${l}`).toBeLessThanOrEqual(40)
+              }
+  })
+  it('custom-only screens say what each option changes', () => {
+    for (const s of SCREENS.filter((x) => x.when)) {
+      const text = s.lines({ ...p, preset: 'custom' }, ctx).join('\n')
+      for (const o of s.options(p, ctx)) expect(text, `${s.id}: ${o.label}`).toContain(`${o.label}:`)
+    }
   })
 })

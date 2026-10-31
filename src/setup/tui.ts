@@ -47,14 +47,15 @@ export function renderScreen(title: string, lines: string[], options: Option[], 
     for (const r of rows) out.push(o.disabled ? color.dim(r) : on ? color.cyan(r) : r)
     if (on && o.preview) for (const p of o.preview) for (const r of wrapLine(p, width)) out.push(color.dim(r))
   })
-  out.push('', color.dim(fitLine('↑↓/jk move · Enter · b back · Esc quit', width)))
+  out.push('', ...wrapLine('↑↓/jk move · Enter · b back · Esc quit', width).map((r) => color.dim(r)))
   return out
 }
 
 export type AskResult = { kind: 'pick'; value: string | boolean } | { kind: 'back' | 'quit' | 'abort' }
 
 export async function ask(io: Io, title: string, lines: string[], options: Option[], initial: number): Promise<AskResult> {
-  let cursor = initial
+  // a disabled `initial` can't be picked: start on the first enabled option
+  let cursor = options[initial]?.disabled ? Math.max(0, options.findIndex((o) => !o.disabled)) : initial
   const draw = () => io.write('\x1b[2J\x1b[H' + renderScreen(title, lines, options, cursor, io.width()).join('\r\n'))
   draw()
   for (;;) {
@@ -67,9 +68,9 @@ export async function ask(io: Io, title: string, lines: string[], options: Optio
   }
 }
 
-export function terminalIo(): Io {
-  const { stdin, stdout } = process
+export function terminalIo(stdin: NodeJS.ReadStream = process.stdin, stdout: NodeJS.WriteStream = process.stdout): Io {
   readline.emitKeypressEvents(stdin)
+  const wasRaw = stdin.isRaw
   stdin.setRawMode?.(true)
   stdin.resume()
   stdout.write('\x1b[?25l')
@@ -77,14 +78,22 @@ export function terminalIo(): Io {
   let wake: (() => void) | undefined
   const push = (k: Key) => { queue.push(k); wake?.() }
   const onKeypress = (_s: string | undefined, key: Key | undefined) => { if (key) push(key) }
-  const onResize = () => push({ name: 'resize' })
-  stdin.on('keypress', onKeypress)
-  stdout.on('resize', onResize)
+  const onResize = () => { if (!queue.some((k) => k.name === 'resize')) push({ name: 'resize' }) }
+  // a dropped SSH connection ends stdin: stop waiting for keys
   let closed = false
+  let ended = false
+  const onEnd = () => { ended = true; wake?.() }
+  // if the process dies mid-wizard, don't leave the cursor hidden
+  const showCursor = () => void stdout.write('\x1b[?25h')
+  stdin.on('keypress', onKeypress)
+  stdin.on('end', onEnd)
+  stdin.on('close', onEnd)
+  stdout.on('resize', onResize)
+  process.on('exit', showCursor)
   const keys: AsyncIterator<Key> = {
     async next() {
       while (!queue.length) {
-        if (closed) return { value: undefined, done: true }
+        if (closed || ended) return { value: undefined, done: true }
         await new Promise<void>((r) => { wake = r })
       }
       return { value: queue.shift()!, done: false }
@@ -98,9 +107,12 @@ export function terminalIo(): Io {
       if (closed) return
       closed = true
       stdin.off('keypress', onKeypress)
+      stdin.off('end', onEnd)
+      stdin.off('close', onEnd)
       stdout.off('resize', onResize)
-      stdin.setRawMode?.(false)
-      stdout.write('\x1b[?25h')
+      process.off('exit', showCursor)
+      stdin.setRawMode?.(wasRaw ?? false)
+      showCursor()
       stdin.pause()
       wake?.()
     },
