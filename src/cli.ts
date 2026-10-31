@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { runDoctor } from './doctor/main.js'
 import { runFrame, runFrameFit } from './frame/main.js'
 import { runHook } from './hooks/main.js'
 import { runLaunch } from './launch/main.js'
@@ -10,6 +11,7 @@ const USAGE = `usage: hece [claude args…]          open the hece window: Activ
        hece --no-frame [claude args…]   Claude Code with hece loaded, no panels
        hece status                      show where you are in the flow
        hece panel <flow|activity|sessions>   run one panel (used by the window)
+       hece doctor                      check the install
        hece help                        show this help
 (hece hook and hece mcp are run by Claude Code itself)
 `
@@ -18,6 +20,7 @@ async function main(argv: string[]): Promise<void> {
   const [cmd] = argv
   if (cmd === 'hook') return runHook()
   if (cmd === 'mcp') return runMcp()
+  if (cmd === 'doctor') return runDoctor()
   if (cmd === 'status') return runStatus()
   if (cmd === 'frame-fit') return runFrameFit()
   if (cmd === 'panel') return runPanel(argv.slice(1))
