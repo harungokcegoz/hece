@@ -99,6 +99,7 @@ The first time you run `hece` in a terminal, a short setup asks how involved you
 hece setup         # choose your preferences again
 hece prefs [name]  # change one group, e.g. hece prefs guards
 hece doctor        # check the install
+hece update        # pull, install and rebuild a source install
 ```
 
 Ask Claude to build something with hece, for example *"Let's build a CLI that prints a greeting, using hece."* To see where you are, run this from your project root:

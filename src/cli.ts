@@ -7,6 +7,7 @@ import { runMcp } from './mcp/main.js'
 import { runPanel } from './panels/main.js'
 import { maybeFirstRun, runPrefs, runSetup } from './setup/main.js'
 import { runStatus } from './status/main.js'
+import { runUpdate } from './update/main.js'
 
 const USAGE = `usage: hece [claude args…]          open the hece window: Activity · Claude · Flow
        hece --no-frame [claude args…]   Claude Code with hece loaded, no panels
@@ -15,6 +16,7 @@ const USAGE = `usage: hece [claude args…]          open the hece window: Activ
        hece setup                       choose your preferences
        hece prefs [name]                change one preference group
        hece doctor                      check the install
+       hece update                      pull, install and rebuild (source installs)
        hece help                        show this help
 (hece hook and hece mcp are run by Claude Code itself)
 `
@@ -24,6 +26,7 @@ async function main(argv: string[]): Promise<void> {
   if (cmd === 'hook') return runHook()
   if (cmd === 'mcp') return runMcp()
   if (cmd === 'doctor') return runDoctor()
+  if (cmd === 'update') return runUpdate()
   if (cmd === 'setup') return runSetup(argv.slice(1))
   if (cmd === 'prefs') return runPrefs(argv.slice(1))
   if (cmd === 'status') return runStatus()
